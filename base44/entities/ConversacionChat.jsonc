@@ -1,0 +1,43 @@
+{
+  "name": "ConversacionChat",
+  "type": "object",
+  "properties": {
+    "proyecto_id": {
+      "type": "string",
+      "description": "ID del proyecto"
+    },
+    "visitor_id": {
+      "type": "string",
+      "description": "ID del visitante (cookie web, tel\u00e9fono WA, etc.)"
+    },
+    "canal": {
+      "type": "string",
+      "enum": [
+        "web",
+        "whatsapp",
+        "telegram",
+        "embed"
+      ],
+      "default": "web"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "system"
+      ],
+      "description": "Rol del mensaje"
+    },
+    "content": {
+      "type": "string",
+      "description": "Contenido del mensaje"
+    }
+  },
+  "required": [
+    "proyecto_id",
+    "visitor_id",
+    "role",
+    "content"
+  ]
+}

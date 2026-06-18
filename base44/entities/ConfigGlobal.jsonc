@@ -1,0 +1,19 @@
+{
+  "name": "ConfigGlobal",
+  "type": "object",
+  "properties": {
+    "limite_mensajes_mes": {
+      "type": "number",
+      "default": 200,
+      "description": "L\u00edmite de mensajes por proyecto al mes"
+    },
+    "clave": {
+      "type": "string",
+      "default": "global",
+      "description": "Clave \u00fanica para la configuraci\u00f3n global"
+    }
+  },
+  "required": [
+    "clave"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "name": "MensajeWA",
+  "type": "object",
+  "properties": {
+    "proyecto_id": {
+      "type": "string",
+      "description": "ID del proyecto"
+    },
+    "from_number": {
+      "type": "string",
+      "description": "N\u00famero del cliente que escribe (+34612345678)"
+    },
+    "to_number": {
+      "type": "string",
+      "description": "N\u00famero del negocio que recibe (= ycloud_phone_number)"
+    },
+    "mensaje": {
+      "type": "string",
+      "description": "Texto que envi\u00f3 el cliente"
+    },
+    "respuesta": {
+      "type": "string",
+      "description": "Texto que respondi\u00f3 la IA"
+    },
+    "wamid": {
+      "type": "string",
+      "description": "ID \u00fanico del mensaje en WhatsApp"
+    },
+    "estado": {
+      "type": "string",
+      "enum": [
+        "recibido",
+        "enviado",
+        "entregado",
+        "leido",
+        "error"
+      ],
+      "default": "recibido",
+      "description": "Estado del mensaje"
+    }
+  },
+  "required": [
+    "proyecto_id"
+  ]
+}

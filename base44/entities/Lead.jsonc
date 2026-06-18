@@ -1,0 +1,67 @@
+{
+  "name": "Lead",
+  "type": "object",
+  "properties": {
+    "proyecto_id": {
+      "type": "string",
+      "description": "ID del proyecto/chatbot que capt\u00f3 el lead"
+    },
+    "nombre": {
+      "type": "string",
+      "description": "Nombre del potencial cliente"
+    },
+    "email": {
+      "type": "string",
+      "description": "Email del potencial cliente"
+    },
+    "telefono": {
+      "type": "string",
+      "description": "Tel\u00e9fono del potencial cliente"
+    },
+    "empresa": {
+      "type": "string",
+      "description": "Empresa del potencial cliente"
+    },
+    "notas": {
+      "type": "string",
+      "description": "Notas o intereses detectados en la conversaci\u00f3n"
+    },
+    "canal": {
+      "type": "string",
+      "enum": [
+        "web",
+        "whatsapp",
+        "telegram",
+        "embed"
+      ],
+      "default": "web",
+      "description": "Canal por el que se capt\u00f3 el lead"
+    },
+    "visitor_id": {
+      "type": "string",
+      "description": "ID del visitante (cookie en web, tel\u00e9fono en WhatsApp/Telegram)"
+    },
+    "estado": {
+      "type": "string",
+      "enum": [
+        "nuevo",
+        "contactado",
+        "cualificado",
+        "descartado"
+      ],
+      "default": "nuevo"
+    },
+    "mensajes_count": {
+      "type": "number",
+      "default": 0,
+      "description": "N\u00famero de mensajes intercambiados"
+    },
+    "ultimo_mensaje": {
+      "type": "string",
+      "description": "Fecha del \u00faltimo mensaje"
+    }
+  },
+  "required": [
+    "proyecto_id"
+  ]
+}

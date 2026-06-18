@@ -1,0 +1,252 @@
+{
+  "name": "Proyecto",
+  "type": "object",
+  "properties": {
+    "url_origen": {
+      "type": "string",
+      "description": "URL a scrapear"
+    },
+    "nombre": {
+      "type": "string",
+      "description": "Nombre del proyecto"
+    },
+    "estado": {
+      "type": "string",
+      "enum": [
+        "scrapeando",
+        "generando",
+        "activo",
+        "pausado",
+        "pro_activo",
+        "inactivo"
+      ],
+      "default": "scrapeando"
+    },
+    "metadata_scrapeado": {
+      "type": "object",
+      "description": "Metadata extra\u00edda",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "ogImage": {
+          "type": "string"
+        },
+        "favicon": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "plantilla_elegida": {
+      "type": "string",
+      "enum": [
+        "moderna",
+        "clasica",
+        "minimalista",
+        "corporativa",
+        "ecommerce"
+      ],
+      "default": "moderna"
+    },
+    "esquema_color": {
+      "type": "string",
+      "enum": [
+        "azul_profesional",
+        "verde_naturaleza",
+        "rojo_impacto",
+        "oscuro_premium",
+        "claro_limpio",
+        "naranja_energia"
+      ],
+      "default": "azul_profesional"
+    },
+    "contenido_scrapeado": {
+      "type": "string",
+      "description": "Contenido markdown scrapeado"
+    },
+    "chatbot_config": {
+      "type": "object",
+      "description": "Configuraci\u00f3n del chatbot",
+      "properties": {
+        "nombre_negocio": {
+          "type": "string"
+        },
+        "descripcion": {
+          "type": "string"
+        },
+        "logo_url": {
+          "type": "string"
+        },
+        "color_primario": {
+          "type": "string"
+        },
+        "color_secundario": {
+          "type": "string"
+        },
+        "welcome_message": {
+          "type": "string"
+        },
+        "knowledge_base": {
+          "type": "string"
+        },
+        "telefono": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "direccion": {
+          "type": "string"
+        },
+        "notification_email": {
+          "type": "string",
+          "description": "Email para notificaciones de leads"
+        },
+        "whatsapp_numero": {
+          "type": "string",
+          "description": "N\u00famero de WhatsApp Business del cliente"
+        }
+      }
+    },
+    "ecommerce_config": {
+      "type": "object",
+      "description": "Configuraci\u00f3n de ecommerce",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "ferreteria1",
+            "prestashop",
+            "woocommerce",
+            "shopify",
+            "odoo",
+            "googlesheets"
+          ]
+        },
+        "store_url": {
+          "type": "string"
+        },
+        "api_key": {
+          "type": "string"
+        },
+        "api_secret": {
+          "type": "string"
+        },
+        "ferreteria_id": {
+          "type": "string"
+        },
+        "tenant_slug": {
+          "type": "string"
+        },
+        "odoo_db": {
+          "type": "string"
+        },
+        "odoo_username": {
+          "type": "string"
+        },
+        "odoo_password": {
+          "type": "string"
+        },
+        "sheet_url": {
+          "type": "string"
+        }
+      }
+    },
+    "stripe_session_id": {
+      "type": "string",
+      "description": "ID de la sesi\u00f3n de pago de Stripe"
+    },
+    "agent_name": {
+      "type": "string",
+      "description": "Nombre del agente IA asociado"
+    },
+    "modo_atencion": {
+      "type": "string",
+      "enum": [
+        "bot",
+        "coexistencia",
+        "humano"
+      ],
+      "default": "bot",
+      "description": "Modo de atenci\u00f3n: solo bot, coexistencia bot+humano, o solo humano"
+    },
+    "whatsapp_numero_propio": {
+      "type": "boolean",
+      "default": true
+    },
+    "telegram_username": {
+      "type": "string"
+    },
+    "telegram_token": {
+      "type": "string"
+    },
+    "onboarding_completado": {
+      "type": "boolean",
+      "default": false
+    },
+    "ycloud_api_key": {
+      "type": "string",
+      "description": "API key de la cuenta YCloud del cliente"
+    },
+    "ycloud_account_email": {
+      "type": "string",
+      "description": "Email de login de la cuenta YCloud del cliente (informativo)"
+    },
+    "ycloud_waba_id": {
+      "type": "string",
+      "description": "ID de la WABA del cliente en YCloud"
+    },
+    "ycloud_phone_number_id": {
+      "type": "string",
+      "description": "ID t\u00e9cnico del n\u00famero en YCloud"
+    },
+    "ycloud_phone_number": {
+      "type": "string",
+      "description": "N\u00famero real del negocio en formato +34XXXXXXXXX"
+    },
+    "system_prompt": {
+      "type": "string",
+      "description": "Prompt del agente IA generado autom\u00e1ticamente"
+    },
+    "whatsapp_activo": {
+      "type": "boolean",
+      "default": false,
+      "description": "Si el canal WhatsApp est\u00e1 operativo"
+    },
+    "mensajes_mes": {
+      "type": "number",
+      "default": 0,
+      "description": "Contador de mensajes del mes"
+    },
+    "limite_mensajes": {
+      "type": "number",
+      "default": 200,
+      "description": "L\u00edmite mensual de mensajes"
+    },
+    "mensajes_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Contador legacy de mensajes"
+    },
+    "notas": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "url_origen",
+    "nombre"
+  ]
+}

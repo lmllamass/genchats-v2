@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App metadata -->
+    <key>CFBundleDisplayName</key>
+    <string>MailSummary</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.mailsummary.app</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+
+    <!-- iOS 16 minimum -->
+    <key>MinimumOSVersion</key>
+    <string>16.0</string>
+
+    <!-- Background App Refresh — REQUIRED for BGTaskScheduler -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>processing</string>
+    </array>
+
+    <!-- Background task identifiers — MUST match kBGTaskIdentifier in code -->
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.mailsummary.daily-email-summary</string>
+    </array>
+
+    <!-- Network usage description (required for App Store) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- Allow outbound HTTPS to Anthropic and Telegram (both use HTTPS) -->
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
+
+    <!-- Privacy descriptions -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>MailSummary necesita acceso a la red local para conectarse a servidores IMAP corporativos.</string>
+
+    <!-- Supported orientations -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+</dict>
+</plist>
