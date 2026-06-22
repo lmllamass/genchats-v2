@@ -5,7 +5,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 import Landing from '@/pages/Landing.jsx';
 import Login from '@/pages/Login';
@@ -47,27 +47,29 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route element={<Layout />}>
-        <Route path="/app" element={isLoading ? <LoadingScreen /> : <Dashboard />} />
-        <Route path="/nuevo" element={isLoading ? <LoadingScreen /> : <NuevoProyecto />} />
-        <Route path="/exportar/:id" element={isLoading ? <LoadingScreen /> : <Exportar />} />
-        <Route path="/planes" element={isLoading ? <LoadingScreen /> : <Planes />} />
-        <Route path="/mi-cuenta" element={isLoading ? <LoadingScreen /> : <MiCuenta />} />
-        <Route path="/conversaciones" element={isLoading ? <LoadingScreen /> : <Conversaciones />} />
-        <Route path="/leads" element={isLoading ? <LoadingScreen /> : <Leads />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<Layout />}>
+          <Route path="/app" element={isLoading ? <LoadingScreen /> : <Dashboard />} />
+          <Route path="/nuevo" element={isLoading ? <LoadingScreen /> : <NuevoProyecto />} />
+          <Route path="/exportar/:id" element={isLoading ? <LoadingScreen /> : <Exportar />} />
+          <Route path="/planes" element={isLoading ? <LoadingScreen /> : <Planes />} />
+          <Route path="/mi-cuenta" element={isLoading ? <LoadingScreen /> : <MiCuenta />} />
+          <Route path="/conversaciones" element={isLoading ? <LoadingScreen /> : <Conversaciones />} />
+          <Route path="/leads" element={isLoading ? <LoadingScreen /> : <Leads />} />
+        </Route>
+        <Route element={<AdminLayout />}>
+          <Route path="/admin" element={isLoading ? <LoadingScreen /> : <AdminDashboard />} />
+          <Route path="/admin/usuarios" element={isLoading ? <LoadingScreen /> : <AdminUsuarios />} />
+          <Route path="/admin/proyectos" element={isLoading ? <LoadingScreen /> : <AdminProyectos />} />
+          <Route path="/admin/logs" element={isLoading ? <LoadingScreen /> : <AdminLogs />} />
+          <Route path="/admin/config" element={isLoading ? <LoadingScreen /> : <AdminConfig />} />
+          <Route path="/admin/configuracion" element={isLoading ? <LoadingScreen /> : <AdminConfiguracion />} />
+          <Route path="/admin/proyectos/:id" element={isLoading ? <LoadingScreen /> : <AdminProyectoDetalle />} />
+          <Route path="/admin/deploy-agent" element={isLoading ? <LoadingScreen /> : <DeployAgent />} />
+        </Route>
+        <Route path="/editor/:id" element={isLoading ? <LoadingScreen /> : <Editor />} />
+        <Route path="/activacion" element={isLoading ? <LoadingScreen /> : <Activacion />} />
       </Route>
-      <Route element={<AdminLayout />}>
-        <Route path="/admin" element={isLoading ? <LoadingScreen /> : <AdminDashboard />} />
-        <Route path="/admin/usuarios" element={isLoading ? <LoadingScreen /> : <AdminUsuarios />} />
-        <Route path="/admin/proyectos" element={isLoading ? <LoadingScreen /> : <AdminProyectos />} />
-        <Route path="/admin/logs" element={isLoading ? <LoadingScreen /> : <AdminLogs />} />
-        <Route path="/admin/config" element={isLoading ? <LoadingScreen /> : <AdminConfig />} />
-        <Route path="/admin/configuracion" element={isLoading ? <LoadingScreen /> : <AdminConfiguracion />} />
-        <Route path="/admin/proyectos/:id" element={isLoading ? <LoadingScreen /> : <AdminProyectoDetalle />} />
-        <Route path="/admin/deploy-agent" element={isLoading ? <LoadingScreen /> : <DeployAgent />} />
-      </Route>
-      <Route path="/editor/:id" element={isLoading ? <LoadingScreen /> : <Editor />} />
-      <Route path="/activacion" element={isLoading ? <LoadingScreen /> : <Activacion />} />
       <Route path="/chat/:id" element={<ChatbotPublic />} />
       <Route path="/asistente" element={<Asistente />} />
       <Route path="/demo" element={<Demo />} />
