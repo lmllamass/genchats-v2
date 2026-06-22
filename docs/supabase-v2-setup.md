@@ -19,15 +19,16 @@ Never put the secret key in frontend env files.
 Open Supabase SQL Editor and run the files in this order:
 
 1. `supabase-schema.sql`
-2. `supabase/migrations/001_conversaciones.sql`
-3. `supabase/migrations/002_leads_crm.sql`
-4. `supabase/migrations/003_oauth_profile_trigger.sql`
-5. `supabase-migrations/002_add_user_profile_columns.sql`
-6. `supabase-migrations/004_super_pro_plan.sql`
-7. `supabase-migrations/005_sistema_logs.sql`
-8. `supabase-migrations/006_retell_voice_fields.sql`
-9. `supabase-migrations/007_project_tools.sql`
-10. `supabase/migrations/004_omnichannel_identity.sql`
+2. `supabase/migrations/000_user_profiles.sql`
+3. `supabase/migrations/001_conversaciones.sql`
+4. `supabase/migrations/002_leads_crm.sql`
+5. `supabase/migrations/003_oauth_profile_trigger.sql`
+6. `supabase-migrations/002_add_user_profile_columns.sql`
+7. `supabase-migrations/004_super_pro_plan.sql`
+8. `supabase-migrations/005_sistema_logs.sql`
+9. `supabase-migrations/006_retell_voice_fields.sql`
+10. `supabase-migrations/007_project_tools.sql`
+11. `supabase/migrations/004_omnichannel_identity.sql`
 
 ## What migration 004 adds
 
