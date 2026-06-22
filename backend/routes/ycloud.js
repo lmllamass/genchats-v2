@@ -10,7 +10,7 @@ router.post('/registrar-webhook', async (req, res) => {
     if (!cfg?.ycloud_api_key) return res.status(400).json({ error: 'YCloud API key not configured' });
 
     // Siempre usar el dominio real — nunca la IP hardcodeada
-    const apiUrl = process.env.API_PUBLIC_URL || 'https://api.genchats.app';
+    const apiUrl = process.env.API_PUBLIC_URL || 'https://api-v2.genchats.app';
     const webhookUrl = `${apiUrl}/api/ycloud/webhook`;
 
     // Si ya hay un webhook registrado, verificamos que la URL en YCloud coincide

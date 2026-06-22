@@ -8,7 +8,7 @@ import { api } from "@/api/backendApi";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
 
-const APP_URL = import.meta.env.VITE_APP_URL || "https://genchats.app";
+const APP_URL = import.meta.env.VITE_APP_URL || "https://v2.genchats.app";
 
 export default function Step3Generate({ data, onBack }) {
   const [generating, setGenerating] = useState(false);

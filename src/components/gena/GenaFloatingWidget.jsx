@@ -3,7 +3,7 @@ import { X, Send, Loader2, Sparkles, ChevronDown, MessageCircle } from "lucide-r
 import ReactMarkdown from "react-markdown";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://api.genchats.app";
+const API_URL = import.meta.env.VITE_API_URL || "https://api-v2.genchats.app";
 
 // Respuestas rápidas — se muestran solo tras el saludo inicial
 const QUICK_REPLIES = [

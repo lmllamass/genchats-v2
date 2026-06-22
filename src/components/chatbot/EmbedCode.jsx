@@ -8,7 +8,8 @@ export default function EmbedCode({ proyecto }) {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const config = proyecto?.chatbot_config || {};
 
-  const domain = window.location.hostname === "localhost" ? window.location.origin : "https://genchats.app";
+  const configuredAppUrl = import.meta.env.VITE_APP_URL || "https://v2.genchats.app";
+  const domain = window.location.hostname === "localhost" ? window.location.origin : configuredAppUrl;
   const publicUrl = `${domain}/chat/${proyecto?.id}`;
 
   const embedHtml = `<!-- Chatbot ${config.nombre_negocio || proyecto?.nombre} -->

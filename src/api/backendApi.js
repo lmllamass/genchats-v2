@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://api.genchats.app';
+const API_URL = import.meta.env.VITE_API_URL || 'https://api-v2.genchats.app';
 
 async function apiFetch(path, options = {}) {
   // Destructure `headers` separately so that ...restOptions doesn't override the

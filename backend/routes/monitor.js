@@ -23,8 +23,8 @@ router.get('/', async (req, res) => {
       cta:    true,   // CTA buttons presentes en la landing
     },
     checks: {
-      frontend_url: 'https://genchats.app',
-      api_url:      'https://api.genchats.app',
+      frontend_url: process.env.APP_URL || 'https://v2.genchats.app',
+      api_url:      process.env.API_PUBLIC_URL || 'https://api-v2.genchats.app',
     },
   });
 });

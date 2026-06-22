@@ -142,7 +142,8 @@ router.post('/webhook', async (req, res) => {
               .catch(() => 'tu negocio'))
           : 'tu negocio';
 
-        fetch(`http://localhost:${process.env.PORT || 4000}/api/notify/pro-activation`, {
+        const apiUrl = process.env.API_PUBLIC_URL || `http://localhost:${process.env.PORT || 4000}`;
+        fetch(`${apiUrl}/api/notify/pro-activation`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: customerEmail, nombre_negocio, proyecto_id: proyectoId || '' })
         }).then(null, () => {});

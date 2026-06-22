@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2, Save, Copy, Pencil, Phone, Power } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://api.genchats.app";
+const API_BASE = import.meta.env.VITE_API_URL || "https://api-v2.genchats.app";
 
 export default function RetellProjectSection({ proyecto, onUpdate, saving }) {
   const [editing, setEditing] = useState(!proyecto.retell_agent_id);

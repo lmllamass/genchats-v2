@@ -6,7 +6,8 @@ import { api } from "@/api/backendApi";
 import { toast } from "sonner";
 import MaskedField from "./MaskedField";
 
-const WEBHOOK_URL = "https://api.genchats.app/api/ycloud/webhook";
+const API_PUBLIC_URL = import.meta.env.VITE_API_URL || "https://api-v2.genchats.app";
+const WEBHOOK_URL = `${API_PUBLIC_URL}/api/ycloud/webhook`;
 
 export default function YCloudBlock({ form, setField }) {
   const [verifying, setVerifying] = useState(false);

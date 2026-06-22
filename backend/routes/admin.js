@@ -150,7 +150,7 @@ router.post('/invitar', async (req, res) => {
     console.log('[invitar] Received request, email:', email);
     if (!email) return res.status(400).json({ error: 'email required' });
 
-    const siteUrl = process.env.APP_URL || 'https://genchats.app';
+    const siteUrl = process.env.APP_URL || 'https://v2.genchats.app';
     const resendKey = process.env.RESEND_API_KEY;
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@genchats.app';
 
@@ -265,7 +265,7 @@ router.post('/telegram/registrar-webhook', async (req, res) => {
     const botToken = proyecto.telegram_token;
     if (!botToken) return res.status(400).json({ error: 'El proyecto no tiene telegram_token configurado' });
 
-    const apiUrl = process.env.API_PUBLIC_URL || 'https://api.genchats.app';
+    const apiUrl = process.env.API_PUBLIC_URL || 'https://api-v2.genchats.app';
     const webhookUrl = `${apiUrl}/api/telegram/webhook/${proyecto_id}`;
 
     const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {

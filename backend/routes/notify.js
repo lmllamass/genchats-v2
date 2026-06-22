@@ -98,6 +98,7 @@ router.post('/whatsapp-request', async (req, res) => {
 
     const resend = getResend();
     const adminEmail = process.env.ADMIN_EMAIL || 'info@konkabeza.es';
+    const appUrl = process.env.APP_URL || 'https://v2.genchats.app';
 
     await resend.emails.send({
       from: getFrom(),
@@ -118,7 +119,7 @@ router.post('/whatsapp-request', async (req, res) => {
           <p style="margin-top:24px">Acciones pendientes:</p>
           <ul style="line-height:2;color:#374151">
             <li>Configurar número YCloud (hasta obtener número agencia Meta)</li>
-            <li>Activar WhatsApp en <a href="https://genchats.app/admin/proyectos/${proyecto_id}" style="color:#7c3aed">panel admin del proyecto</a></li>
+            <li>Activar WhatsApp en <a href="${appUrl}/admin/proyectos/${proyecto_id}" style="color:#7c3aed">panel admin del proyecto</a></li>
             <li>Notificar al usuario cuando esté activo</li>
           </ul>
           <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
@@ -143,6 +144,7 @@ router.post('/retell-request', async (req, res) => {
 
     const resend = getResend();
     const adminEmail = process.env.ADMIN_EMAIL || 'info@konkabeza.es';
+    const appUrl = process.env.APP_URL || 'https://v2.genchats.app';
 
     await resend.emails.send({
       from: getFrom(),
@@ -164,7 +166,7 @@ router.post('/retell-request', async (req, res) => {
           <ul style="line-height:2;color:#374151">
             <li>Crear agente en <a href="https://dashboard.retellai.com" style="color:#7c3aed">Retell Dashboard</a> con el system prompt del proyecto</li>
             <li>Asignar número de teléfono Retell al agente</li>
-            <li>Activar en <a href="https://genchats.app/admin/proyectos/${proyecto_id}" style="color:#7c3aed">panel admin del proyecto</a> (campos retell_agent_id, retell_phone_number, retell_activo)</li>
+            <li>Activar en <a href="${appUrl}/admin/proyectos/${proyecto_id}" style="color:#7c3aed">panel admin del proyecto</a> (campos retell_agent_id, retell_phone_number, retell_activo)</li>
             <li>Notificar al usuario cuando esté activo</li>
           </ul>
           <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>

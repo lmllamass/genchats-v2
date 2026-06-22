@@ -10,7 +10,8 @@ import { toast } from "sonner";
 import WhatsAppManualGuide from "./WhatsAppManualGuide";
 import TestMessageModal from "./TestMessageModal";
 
-const WEBHOOK_URL = "https://api.genchats.app/api/ycloud/webhook";
+const API_PUBLIC_URL = import.meta.env.VITE_API_URL || "https://api-v2.genchats.app";
+const WEBHOOK_URL = `${API_PUBLIC_URL}/api/ycloud/webhook`;
 
 function buildPromptFromConfig(proyecto) {
   const c = proyecto.chatbot_config || {};
