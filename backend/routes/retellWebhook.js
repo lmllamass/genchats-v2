@@ -6,10 +6,16 @@ import {
   loadExistingLead,
   createAnthropicClient,
 } from '../lib/agentCore.js';
+import {
+  buildCustomerMemoryPrompt,
+  loadCustomerHistory,
+  recordCustomerMessage,
+  resolveCustomerIdentity,
+} from '../lib/customerIdentityService.js';
 
 const FAREWELL_RE = /\b(hasta luego|adi[oó]s|chao|bye|goodbye|hasta pronto|hasta la pr[oó]xima|buenas noches|que tenga[s]? buen)\b/i;
 
-function buildPhoneSystemPrompt(proyecto, config, existingLead) {
+function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
@@ -44,7 +50,7 @@ CONTACTO:
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
-${ecommerceNote}${leadContext}`;
+${ecommerceNote}${leadContext}${buildCustomerMemoryPrompt(customerContext)}`;
 }
 
 function transcriptToMessages(transcript) {
@@ -81,6 +87,7 @@ export function attachRetellWebSocket(server) {
 
     const anthropic = createAnthropicClient();
     let callId = null;
+    let customerContext = null;
 
     // Promise that resolves to { proyecto, config } once call_details arrives
     let resolveState;
@@ -99,6 +106,16 @@ export function attachRetellWebSocket(server) {
       // ── call_details: load project ─────────────────────────────────────
       if (msg.interaction_type === 'call_details') {
         callId = msg.call?.call_id || null;
+        const callerPhone = msg.call?.from_number
+          || msg.call?.from
+          || msg.call?.caller_number
+          || msg.call?.metadata?.from_number
+          || null;
+        const businessPhone = msg.call?.to_number
+          || msg.call?.to
+          || msg.call?.callee_number
+          || msg.call?.metadata?.to_number
+          || null;
 
         const { data: proj } = await supabase
           .from('proyectos')
@@ -115,6 +132,23 @@ export function attachRetellWebSocket(server) {
         const cfg = typeof proj.chatbot_config === 'string'
           ? JSON.parse(proj.chatbot_config)
           : (proj.chatbot_config || {});
+
+        customerContext = await resolveCustomerIdentity(supabase, {
+          proyecto: proj,
+          channel: 'phone',
+          threadId: callId || `retell_${projectId}_${Date.now()}`,
+          legacyVisitorId: callId || `retell_${projectId}_${Date.now()}`,
+          identities: [
+            callId && { identity_type: 'retell_call_id', identity_value: callId, confidence: 'medium', source_channel: 'phone' },
+            callerPhone && { identity_type: 'retell_phone_number', identity_value: callerPhone, confidence: 'high', verified: true, source_channel: 'phone' },
+            callerPhone && { identity_type: 'phone', identity_value: callerPhone, confidence: 'high', verified: true, source_channel: 'phone' },
+          ].filter(Boolean),
+          traits: { phone: callerPhone },
+          metadata: { call_id: callId, from_number: callerPhone, to_number: businessPhone },
+        }).catch(err => {
+          console.warn('[identity] retell resolve failed:', err.message);
+          return null;
+        });
 
         // Send greeting immediately — don't wait for response_required
         // (begin_message="" doesn't persist via Retell API, so we initiate proactively)
@@ -152,18 +186,22 @@ export function attachRetellWebSocket(server) {
         // Skip if transcript is empty (greeting already sent on call_details)
         if (messages.length === 0) return;
 
-        const existingLead = await loadExistingLead(projectId, vid);
+        const [existingLead, unifiedHistory] = await Promise.all([
+          loadExistingLead(projectId, vid),
+          loadCustomerHistory(supabase, customerContext?.customer?.id, messages[messages.length - 1]?.content),
+        ]);
         const ecommerce = proyecto.ecommerce_config;
         const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
         const tools = buildTools(hasEcommerce, ecommerce?.platform, config.enabled_action_tools || []);
-        const system = buildPhoneSystemPrompt(proyecto, config, existingLead);
+        const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext);
+        const agentMessages = unifiedHistory.length ? [...unifiedHistory, messages[messages.length - 1]] : messages;
 
         let reply = 'Lo siento, no pude procesar tu consulta. ¿Puedes repetirlo?';
         try {
           reply = await runAgentLoop(
             anthropic,
-            { system, tools, messages },
-            { proyecto, vid, canal: 'phone', config, existingLead },
+            { system, tools, messages: agentMessages },
+            { proyecto, vid, canal: 'phone', config, existingLead, customer: customerContext?.customer },
             4,
           );
         } catch (err) {
@@ -177,6 +215,25 @@ export function attachRetellWebSocket(server) {
             { proyecto_id: projectId, visitor_id: vid, role: 'user',      content: lastUser.content },
             { proyecto_id: projectId, visitor_id: vid, role: 'assistant', content: reply },
           ]).then(({ error }) => { if (error) console.warn('Retell chat save error:', error.message); });
+
+          await recordCustomerMessage(supabase, {
+            proyectoId: projectId,
+            customerId: customerContext?.customer?.id,
+            conversationId: customerContext?.conversation?.id,
+            channel: 'phone',
+            role: 'user',
+            content: lastUser.content,
+            metadata: { call_id: callId },
+          });
+          await recordCustomerMessage(supabase, {
+            proyectoId: projectId,
+            customerId: customerContext?.customer?.id,
+            conversationId: customerContext?.conversation?.id,
+            channel: 'phone',
+            role: 'assistant',
+            content: reply,
+            metadata: { call_id: callId },
+          });
         }
 
         const endCall = FAREWELL_RE.test(reply);

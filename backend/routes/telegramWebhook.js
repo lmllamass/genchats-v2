@@ -23,6 +23,11 @@ import {
   createAnthropicClient,
 } from '../lib/agentCore.js';
 import { loadProjectTools } from '../lib/actionsService.js';
+import {
+  loadCustomerHistory,
+  recordCustomerMessage,
+  resolveCustomerIdentity,
+} from '../lib/customerIdentityService.js';
 const router = express.Router();
 
 // POST /api/telegram/webhook/:proyecto_id
@@ -76,21 +81,51 @@ router.post('/webhook/:proyecto_id', async (req, res) => {
     // ── Visitor ID — use Telegram user ID (stable across chats) ──────────
     const vid = `tg_${fromId}`;
 
+    const customerContext = await resolveCustomerIdentity(supabase, {
+      proyecto,
+      channel: 'telegram',
+      threadId: vid,
+      legacyVisitorId: vid,
+      identities: [
+        { identity_type: 'telegram_user_id', identity_value: fromId, confidence: 'high', verified: true, source_channel: 'telegram' },
+        message.from?.username && { identity_type: 'telegram_username', identity_value: message.from.username, confidence: 'medium', source_channel: 'telegram' },
+      ].filter(Boolean),
+      traits: { name: fromName },
+      metadata: { chat_id: chatId, username: message.from?.username || null },
+    }).catch(err => {
+      console.warn('[identity] telegram resolve failed:', err.message);
+      return null;
+    });
+
     // ── Save inbound message ──────────────────────────────────────────────
-    await supabase.from('conversaciones_chat').insert({
+    const { data: legacyUserMsg } = await supabase.from('conversaciones_chat').insert({
       proyecto_id: proyecto.id,
       visitor_id: vid,
       canal: 'telegram',
       role: 'user',
       content: textoCliente,
-    }).then(null, () => {});
+    }).select().single().then(r => r, () => ({ data: null }));
+
+    await recordCustomerMessage(supabase, {
+      proyectoId: proyecto.id,
+      customerId: customerContext?.customer?.id,
+      conversationId: customerContext?.conversation?.id,
+      channel: 'telegram',
+      role: 'user',
+      content: textoCliente,
+      providerMessageId: message.message_id ? String(message.message_id) : null,
+      legacyMessageId: legacyUserMsg?.id,
+      metadata: { chat_id: chatId },
+    });
 
     // ── Load history, lead and action tools ──────────────────────────────
-    const [history, loadedLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
+    const [legacyHistory, unifiedHistory, loadedLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
       loadHistory(proyecto.id, vid, textoCliente),
+      loadCustomerHistory(supabase, customerContext?.customer?.id, textoCliente),
       loadExistingLead(proyecto.id, vid),
       loadProjectTools(supabase, proyecto.id),
     ]);
+    const history = unifiedHistory.length ? unifiedHistory : legacyHistory;
     let existingLead = loadedLead;
 
     // Auto-populate name if we have it from Telegram and lead doesn't have one yet
@@ -102,7 +137,7 @@ router.post('/webhook/:proyecto_id', async (req, res) => {
     const ecommerce = proyecto.ecommerce_config;
     const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
-    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, 'telegram');
+    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, 'telegram', customerContext);
     const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools);
     const toolContext = {
       proyecto,
@@ -111,6 +146,7 @@ router.post('/webhook/:proyecto_id', async (req, res) => {
       config,
       existingLead,
       toolConfigs,
+      customer: customerContext?.customer,
     };
 
     // Show typing indicator while Claude thinks
@@ -127,13 +163,24 @@ router.post('/webhook/:proyecto_id', async (req, res) => {
     // ── Send reply and save ───────────────────────────────────────────────
     await sendTelegram(chatId, reply, botToken);
 
-    await supabase.from('conversaciones_chat').insert({
+    const { data: legacyAssistantMsg } = await supabase.from('conversaciones_chat').insert({
       proyecto_id: proyecto.id,
       visitor_id: vid,
       canal: 'telegram',
       role: 'assistant',
       content: reply,
-    }).then(null, () => {});
+    }).select().single().then(r => r, () => ({ data: null }));
+
+    await recordCustomerMessage(supabase, {
+      proyectoId: proyecto.id,
+      customerId: customerContext?.customer?.id,
+      conversationId: customerContext?.conversation?.id,
+      channel: 'telegram',
+      role: 'assistant',
+      content: reply,
+      legacyMessageId: legacyAssistantMsg?.id,
+      metadata: { chat_id: chatId },
+    });
 
     await supabase.from('proyectos')
       .update({ mensajes_mes: mensajesMes + 1 })

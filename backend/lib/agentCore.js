@@ -8,6 +8,7 @@ import { Resend } from 'resend';
 import { supabase } from '../server.js';
 import { queryEcommerce, formatProducts } from './ecommerceConnectors.js';
 import { callActionWebhook } from './actionsService.js';
+import { buildCustomerMemoryPrompt, updateCustomerFromContact } from './customerIdentityService.js';
 
 // ── Retry helper (handles 529 Overloaded) ──────────────────────────────────
 export async function callWithRetry(fn, maxRetries = 3) {
@@ -144,7 +145,7 @@ export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools =
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
-export async function executeTool(toolName, toolInput, { proyecto, vid, canal, config, existingLead }) {
+export async function executeTool(toolName, toolInput, { proyecto, vid, canal, config, existingLead, customer, toolConfigs }) {
   switch (toolName) {
 
     case 'buscar_productos': {
@@ -267,13 +268,19 @@ export async function executeTool(toolName, toolInput, { proyecto, vid, canal, c
           }
         }
       }
+      await updateCustomerFromContact(supabase, {
+        customer,
+        proyectoId: proyecto.id,
+        channel: canal,
+        contact: toolInput,
+      });
       return { guardado: true, mensaje: 'Datos de contacto registrados correctamente.' };
     }
 
     default: {
       // Delegate to n8n webhook if this is a registered action tool
       if (Object.prototype.hasOwnProperty.call(ACTION_TOOL_DEFS, toolName)) {
-        const toolConfig = toolContext.toolConfigs?.[toolName] || {};
+        const toolConfig = toolConfigs?.[toolName] || {};
         const result = await callActionWebhook(proyecto.id, toolName, toolInput, toolConfig);
         return result.mensaje || result.message || (result.ok ? 'Acción completada correctamente.' : 'No se pudo completar la acción.');
       }
@@ -344,7 +351,7 @@ export async function runAgentLoop(anthropic, { system, tools, messages }, toolC
  * @param {object|null} existingLead - Lead row for this visitor (or null)
  * @param {'web'|'whatsapp'|'telegram'} canal
  */
-export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web') {
+export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web', customerContext = null) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
@@ -397,6 +404,8 @@ export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web')
     }
   }
 
+  const omnichannelContext = buildCustomerMemoryPrompt(customerContext);
+
   return `Eres el asistente virtual de "${config.nombre_negocio}".
 Responde de forma amable, clara y concisa. Máximo 4-5 frases salvo que sean listas de productos.
 Responde siempre en el idioma del usuario.
@@ -409,7 +418,7 @@ ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
 
-${formatInstructions}${ecommerceNote}${leadContext}`;
+${formatInstructions}${ecommerceNote}${leadContext}${omnichannelContext}`;
 }
 
 // ── WhatsApp text formatter ────────────────────────────────────────────────

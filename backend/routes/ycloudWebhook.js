@@ -10,6 +10,11 @@ import {
   createAnthropicClient,
 } from '../lib/agentCore.js';
 import { loadProjectTools } from '../lib/actionsService.js';
+import {
+  loadCustomerHistory,
+  recordCustomerMessage,
+  resolveCustomerIdentity,
+} from '../lib/customerIdentityService.js';
 const router = express.Router();
 
 // POST /api/ycloud/webhook — WhatsApp inbound messages from YCloud
@@ -91,6 +96,34 @@ router.post('/webhook', async (req, res) => {
       content: textoCliente,
     }).then(null, () => {});
 
+    const customerContext = await resolveCustomerIdentity(supabase, {
+      proyecto,
+      channel: 'whatsapp',
+      threadId: fromNumber,
+      legacyVisitorId: fromNumber,
+      identities: [
+        { identity_type: 'whatsapp_number', identity_value: fromNumber, confidence: 'high', verified: true, source_channel: 'whatsapp' },
+        { identity_type: 'phone', identity_value: fromNumber, confidence: 'high', verified: true, source_channel: 'whatsapp' },
+      ],
+      traits: { phone: fromNumber },
+      metadata: { to_number: toNumber, wamid },
+    }).catch(err => {
+      console.warn('[identity] whatsapp resolve failed:', err.message);
+      return null;
+    });
+
+    await recordCustomerMessage(supabase, {
+      proyectoId: proyecto.id,
+      customerId: customerContext?.customer?.id,
+      conversationId: customerContext?.conversation?.id,
+      channel: 'whatsapp',
+      role: 'user',
+      content: textoCliente,
+      providerMessageId: wamid,
+      legacyMessageId: mensajeRecord?.id,
+      metadata: { from_number: fromNumber, to_number: toNumber },
+    });
+
     // Keep conversaciones metadata up to date (inbox feature)
     supabase.from('conversaciones').upsert({
       proyecto_id: proyecto.id, visitor_id: fromNumber, canal: 'whatsapp',
@@ -127,11 +160,13 @@ router.post('/webhook', async (req, res) => {
     }
 
     // ── Load history, lead and action tools ──────────────────────────────
-    const [history, existingLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
+    const [legacyHistory, unifiedHistory, existingLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
       loadHistory(proyecto.id, fromNumber, textoCliente),
+      loadCustomerHistory(supabase, customerContext?.customer?.id, textoCliente),
       loadExistingLead(proyecto.id, fromNumber),
       loadProjectTools(supabase, proyecto.id),
     ]);
+    const history = unifiedHistory.length ? unifiedHistory : legacyHistory;
 
     // Auto-populate phone in lead if not present
     const leadWithPhone = existingLead
@@ -143,7 +178,7 @@ router.post('/webhook', async (req, res) => {
     const ecommerce = proyecto.ecommerce_config;
     const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
-    const systemPrompt = buildSystemPrompt(proyecto, config, leadWithPhone, 'whatsapp');
+    const systemPrompt = buildSystemPrompt(proyecto, config, leadWithPhone, 'whatsapp', customerContext);
     const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools);
     const toolContext = {
       proyecto,
@@ -152,6 +187,7 @@ router.post('/webhook', async (req, res) => {
       config,
       existingLead: leadWithPhone,
       toolConfigs,
+      customer: customerContext?.customer,
     };
 
     // ── Run Claude agentic loop ───────────────────────────────────────────
@@ -173,6 +209,16 @@ router.post('/webhook', async (req, res) => {
       role: 'assistant',
       content: respuestaIA,
     }).then(null, () => {});
+
+    await recordCustomerMessage(supabase, {
+      proyectoId: proyecto.id,
+      customerId: customerContext?.customer?.id,
+      conversationId: customerContext?.conversation?.id,
+      channel: 'whatsapp',
+      role: 'assistant',
+      content: respuestaIA,
+      metadata: { to_number: fromNumber, from_number: toNumber },
+    });
 
     const sendResult = await sendYCloud(fromNumber, respuestaIA, YCLOUD_API_KEY, toNumber);
 

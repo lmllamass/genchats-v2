@@ -9,6 +9,11 @@ import {
   createAnthropicClient,
 } from '../lib/agentCore.js';
 import { loadProjectTools } from '../lib/actionsService.js';
+import {
+  loadCustomerHistory,
+  recordCustomerMessage,
+  resolveCustomerIdentity,
+} from '../lib/customerIdentityService.js';
 
 const router = express.Router();
 
@@ -44,25 +49,53 @@ router.post('/respond', async (req, res) => {
     const config = proyecto.chatbot_config || {};
     const ecommerce = proyecto.ecommerce_config;
     const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
+
+    const customerContext = await resolveCustomerIdentity(supabase, {
+      proyecto,
+      channel: canal,
+      threadId: vid,
+      legacyVisitorId: vid,
+      identities: [
+        { identity_type: 'web_visitor_id', identity_value: vid, confidence: 'medium', source_channel: canal },
+        ip && { identity_type: 'ip', identity_value: ip, confidence: 'low', source_channel: canal },
+      ].filter(Boolean),
+      metadata: { ip },
+    }).catch(err => {
+      console.warn('[identity] web resolve failed:', err.message);
+      return null;
+    });
 
     // Save user message
     try {
-      await supabase.from('conversaciones_chat').insert({
+      const { data: legacyMsg } = await supabase.from('conversaciones_chat').insert({
         proyecto_id, visitor_id: vid, canal, role: 'user', content: message,
+      }).select().single();
+      await recordCustomerMessage(supabase, {
+        proyectoId: proyecto_id,
+        customerId: customerContext?.customer?.id,
+        conversationId: customerContext?.conversation?.id,
+        channel: canal,
+        role: 'user',
+        content: message,
+        legacyMessageId: legacyMsg?.id,
+        metadata: { ip },
       });
     } catch (_) {}
 
     // Load history, lead and enabled action tools
-    const [history, existingLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
+    const [legacyHistory, unifiedHistory, existingLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
       loadHistory(proyecto_id, vid, message),
+      loadCustomerHistory(supabase, customerContext?.customer?.id, message),
       loadExistingLead(proyecto_id, vid),
       loadProjectTools(supabase, proyecto_id),
     ]);
+    const history = unifiedHistory.length ? unifiedHistory : legacyHistory;
 
     // Build system prompt and tools
-    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, canal);
+    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, canal, customerContext);
     const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools);
-    const toolContext = { proyecto, vid, canal, config, existingLead, toolConfigs };
+    const toolContext = { proyecto, vid, canal, config, existingLead, toolConfigs, customer: customerContext?.customer };
 
     // Run agent loop
     const reply = await runAgentLoop(
@@ -73,8 +106,17 @@ router.post('/respond', async (req, res) => {
 
     // Save assistant reply
     try {
-      await supabase.from('conversaciones_chat').insert({
+      const { data: legacyMsg } = await supabase.from('conversaciones_chat').insert({
         proyecto_id, visitor_id: vid, canal, role: 'assistant', content: reply,
+      }).select().single();
+      await recordCustomerMessage(supabase, {
+        proyectoId: proyecto_id,
+        customerId: customerContext?.customer?.id,
+        conversationId: customerContext?.conversation?.id,
+        channel: canal,
+        role: 'assistant',
+        content: reply,
+        legacyMessageId: legacyMsg?.id,
       });
     } catch (_) {}
 
