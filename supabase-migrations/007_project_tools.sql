@@ -16,6 +16,15 @@ CREATE TABLE IF NOT EXISTS project_tools (
 CREATE INDEX IF NOT EXISTS idx_project_tools_project_enabled
   ON project_tools(project_id, enabled);
 
+ALTER TABLE project_tools ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_role_project_tools" ON project_tools;
+CREATE POLICY "service_role_project_tools" ON project_tools
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
 -- Auto-update updated_at
 CREATE OR REPLACE FUNCTION update_project_tools_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
