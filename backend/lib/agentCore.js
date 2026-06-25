@@ -290,24 +290,55 @@ export async function executeTool(toolName, toolInput, { proyecto, vid, canal, c
 }
 
 // ── Agentic loop ───────────────────────────────────────────────────────────
-export async function runAgentLoop(anthropic, { system, tools, messages }, toolContext, maxIter = 4) {
+/**
+ * @param {object} hooks - Streaming hooks (opt-in, sólo voz):
+ *   onDelta(text)   -> se llama con cada fragmento de texto del modelo (para TTS en streaming)
+ *   onToolStart()   -> se llama una vez al empezar a ejecutar herramientas sin texto previo
+ *                      (para enviar una muletilla de espera al cliente)
+ * Si no se pasa onDelta, se usa el camino clásico sin streaming (web/WhatsApp/Telegram).
+ */
+export async function runAgentLoop(anthropic, { system, tools, messages }, toolContext, maxIter = 4, hooks = {}) {
+  const { onDelta, onToolStart } = hooks;
+  const streaming = typeof onDelta === 'function';
   let currentMessages = [...messages];
+  let fillerFired = false;
 
   for (let iter = 0; iter < maxIter; iter++) {
-    const response = await callWithRetry(() =>
-      anthropic.messages.create({
+    let response;
+    let sawText = false;
+
+    if (streaming) {
+      const stream = anthropic.messages.stream({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
         system,
         tools,
         messages: currentMessages,
-      })
-    );
+      });
+      stream.on('text', (delta) => { sawText = true; onDelta(delta); });
+      response = await stream.finalMessage();
+    } else {
+      response = await callWithRetry(() =>
+        anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 600,
+          system,
+          tools,
+          messages: currentMessages,
+        })
+      );
+    }
 
     // Final answer
     if (response.stop_reason !== 'tool_use') {
       const textBlock = response.content.find(b => b.type === 'text');
       return textBlock?.text || 'Lo siento, no pude procesar tu consulta.';
+    }
+
+    // Va a ejecutar herramientas: si el modelo no dijo nada antes, lanza una muletilla
+    if (streaming && onToolStart && !sawText && !fillerFired) {
+      fillerFired = true;
+      try { onToolStart(); } catch { /* noop */ }
     }
 
     // Execute all tool calls in parallel

@@ -15,6 +15,15 @@ import {
 
 const FAREWELL_RE = /\b(hasta luego|adi[oó]s|chao|bye|goodbye|hasta pronto|hasta la pr[oó]xima|buenas noches|que tenga[s]? buen)\b/i;
 
+// Muletillas de espera (se locuta una mientras el agente consulta una herramienta)
+const FILLERS = [
+  'Un momento, estoy localizando tu petición.',
+  'Enseguida te respondo.',
+  'Un segundo, que lo compruebo.',
+  'Dame un momento, por favor.',
+  'Ahora mismo lo miro.',
+];
+
 function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
@@ -35,22 +44,30 @@ function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext)
   }
 
   return `Eres el asistente de voz de "${config.nombre_negocio || proyecto.nombre}".
-Esta es una llamada telefónica real. Habla de forma natural y concisa.
+Esta es una llamada telefónica real. Habla de forma natural, cercana y concisa.
 
 FORMATO (Voz / Teléfono):
-- Máximo 2-3 frases cortas por respuesta.
+- Máximo 2-3 frases cortas por respuesta. Una idea por frase.
 - Sin Markdown, asteriscos, corchetes, emojis ni viñetas.
-- No menciones URLs ni emails (ofrece enviarlos por WhatsApp o email si los piden).
+- No ofrezcas webs ni emails por iniciativa propia. Si el cliente los pide, dilos despacio y claros; para direcciones largas o complejas, mejor ofrécete a enviárselos por WhatsApp.
+- Puedes decir números de teléfono despacio si el cliente los pide.
 - Responde siempre en el idioma del cliente.
+- Si necesitas consultar datos con una herramienta, úsala directamente sin anunciarlo; el sistema ya avisa al cliente de la espera.
+
+COMPORTAMIENTO:
+- Usa SOLO la información del negocio de abajo. Si no sabes algo o no está en esa información, dilo con naturalidad ("no tengo ese dato a mano") y ofrece tomar nota para que les llamen, o conectar con una persona.
+- NO inventes precios, plazos, stock, horarios, direcciones ni datos de contacto. Si no constan, no los supongas.
+- No prometas nada que no puedas confirmar con la información o las herramientas disponibles.
+- Si no entiendes al cliente, pide que lo repita de forma concreta ("perdona, ¿puedes repetirme el nombre del producto?").
+- Si el cliente se enfada o pide hablar con una persona, ofrece tomar sus datos y que le llamen.
+- Sé breve: no recites listas largas; resume y pregunta en qué concretar.
 
 INFORMACIÓN DEL NEGOCIO:
 ${config.knowledge_base || config.descripcion || 'Sin información adicional.'}
 
-CONTACTO:
+CONTACTO (compártelo sólo si el cliente lo pide):
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
-${config.email ? `- Email: ${config.email}` : ''}
-- Web: ${proyecto.url_origen || ''}
-${ecommerceNote}${leadContext}${buildCustomerMemoryPrompt(customerContext)}`;
+${config.email ? `- Email: ${config.email}` : ''}${ecommerceNote}${leadContext}${buildCustomerMemoryPrompt(customerContext)}`;
 }
 
 function transcriptToMessages(transcript) {
@@ -196,27 +213,57 @@ export function attachRetellWebSocket(server) {
         const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext);
         const agentMessages = unifiedHistory.length ? [...unifiedHistory, messages[messages.length - 1]] : messages;
 
-        let reply = 'Lo siento, no pude procesar tu consulta. ¿Puedes repetirlo?';
+        // ── Streaming hacia Retell: enviamos el texto a medida que el modelo lo genera ──
+        let streamed = false;
+        const sendDelta = (text) => {
+          if (!text) return;
+          streamed = true;
+          ws.send(JSON.stringify({
+            response_type: 'response',
+            response_id: msg.response_id,
+            content: text,
+            content_complete: false,
+          }));
+        };
+        // Muletilla de espera mientras se ejecutan herramientas
+        const filler = FILLERS[Math.floor(Math.random() * FILLERS.length)];
+        const hooks = {
+          onDelta: sendDelta,
+          onToolStart: () => sendDelta(`${filler} `),
+        };
+
+        let reply = '';
         try {
           reply = await runAgentLoop(
             anthropic,
             { system, tools, messages: agentMessages },
             { proyecto, vid, canal: 'phone', config, existingLead, customer: customerContext?.customer },
             4,
+            hooks,
           );
         } catch (err) {
           console.error(`Retell agentLoop error (${projectId}):`, err.message);
         }
 
-        // Persist last user message + assistant reply
+        const endCall = FAREWELL_RE.test(reply || '');
+        // Cierre del turno: si ya streameamos, sólo marcamos complete; si no, enviamos fallback.
+        ws.send(JSON.stringify({
+          response_type: 'response',
+          response_id: msg.response_id,
+          content: streamed ? '' : (reply || 'Perdona, no te he entendido. ¿Puedes repetirlo?'),
+          content_complete: true,
+          ...(endCall && { end_call: true }),
+        }));
+
+        // Persistir DESPUÉS de responder (no bloquea la latencia del turno)
         const lastUser = [...messages].reverse().find(m => m.role === 'user');
-        if (lastUser) {
-          await supabase.from('conversaciones_chat').insert([
+        if (lastUser && reply) {
+          supabase.from('conversaciones_chat').insert([
             { proyecto_id: projectId, visitor_id: vid, role: 'user',      content: lastUser.content },
             { proyecto_id: projectId, visitor_id: vid, role: 'assistant', content: reply },
           ]).then(({ error }) => { if (error) console.warn('Retell chat save error:', error.message); });
 
-          await recordCustomerMessage(supabase, {
+          recordCustomerMessage(supabase, {
             proyectoId: projectId,
             customerId: customerContext?.customer?.id,
             conversationId: customerContext?.conversation?.id,
@@ -224,8 +271,8 @@ export function attachRetellWebSocket(server) {
             role: 'user',
             content: lastUser.content,
             metadata: { call_id: callId },
-          });
-          await recordCustomerMessage(supabase, {
+          }).catch(() => {});
+          recordCustomerMessage(supabase, {
             proyectoId: projectId,
             customerId: customerContext?.customer?.id,
             conversationId: customerContext?.conversation?.id,
@@ -233,17 +280,8 @@ export function attachRetellWebSocket(server) {
             role: 'assistant',
             content: reply,
             metadata: { call_id: callId },
-          });
+          }).catch(() => {});
         }
-
-        const endCall = FAREWELL_RE.test(reply);
-        ws.send(JSON.stringify({
-          response_type: 'response',
-          response_id: msg.response_id,
-          content: reply,
-          content_complete: true,
-          ...(endCall && { end_call: true }),
-        }));
 
         if (endCall) console.log(`📞 Call ended by agent — proyecto ${projectId}`);
         return;
