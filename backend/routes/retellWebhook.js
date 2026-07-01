@@ -12,6 +12,7 @@ import {
   recordCustomerMessage,
   resolveCustomerIdentity,
 } from '../lib/customerIdentityService.js';
+import { loadProjectTools } from '../lib/actionsService.js';
 
 const FAREWELL_RE = /\b(hasta luego|adi[oó]s|chao|bye|goodbye|hasta pronto|hasta la pr[oó]xima|buenas noches|que tenga[s]? buen)\b/i;
 
@@ -24,7 +25,7 @@ const FILLERS = [
   'Ahora mismo lo miro.',
 ];
 
-function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext) {
+function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone = null) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
@@ -43,13 +44,18 @@ function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext)
     leadContext = '\n\nREGLA OBLIGATORIA: Si el cliente menciona su nombre, email o teléfono, llama a guardar_contacto DE INMEDIATO.';
   }
 
+  const whatsappNote = callerPhone
+    ? `\n\nWHATSAPP: Si el cliente pide que le mandes información por escrito, usa la herramienta enviar_whatsapp con to="${callerPhone}".`
+    : '\n\nWHATSAPP: Si el cliente quiere recibir información por escrito, pídele su número de WhatsApp y usa la herramienta enviar_whatsapp.';
+
   return `Eres el asistente de voz de "${config.nombre_negocio || proyecto.nombre}".
 Esta es una llamada telefónica real. Habla de forma natural, cercana y concisa.
 
 FORMATO (Voz / Teléfono):
 - Máximo 2-3 frases cortas por respuesta. Una idea por frase.
 - Sin Markdown, asteriscos, corchetes, emojis ni viñetas.
-- No ofrezcas webs ni emails por iniciativa propia. Si el cliente los pide, dilos despacio y claros; para direcciones largas o complejas, mejor ofrécete a enviárselos por WhatsApp.
+- Pronuncia con acento español neutro, vocales claras. No uses siglas sin deletrearlas.
+- No ofrezcas webs ni emails por iniciativa propia. Si el cliente los pide, dilos despacio; para URLs largas, mejor ofrécete a enviárselas por WhatsApp.
 - Puedes decir números de teléfono despacio si el cliente los pide.
 - Responde siempre en el idioma del cliente.
 - Si necesitas consultar datos con una herramienta, úsala directamente sin anunciarlo; el sistema ya avisa al cliente de la espera.
@@ -67,7 +73,9 @@ ${config.knowledge_base || config.descripcion || 'Sin información adicional.'}
 
 CONTACTO (compártelo sólo si el cliente lo pide):
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
-${config.email ? `- Email: ${config.email}` : ''}${ecommerceNote}${leadContext}${buildCustomerMemoryPrompt(customerContext)}`;
+${config.email ? `- Email: ${config.email}` : ''}
+- Web: ${proyecto.url_origen || ''}
+${ecommerceNote}${leadContext}${whatsappNote}${buildCustomerMemoryPrompt(customerContext)}`;
 }
 
 function transcriptToMessages(transcript) {
@@ -168,20 +176,19 @@ export function attachRetellWebSocket(server) {
         });
 
         // Send greeting immediately — don't wait for response_required
-        // (begin_message="" doesn't persist via Retell API, so we initiate proactively)
         const greeting = cfg.saludo_telefono
           || cfg.saludo
           || `Hola, gracias por llamar a ${cfg.nombre_negocio || proj.nombre}. ¿En qué puedo ayudarte?`;
 
         ws.send(JSON.stringify({
           response_type: 'response',
-          response_id: 1,
+          response_id: 0,
           content: greeting,
           content_complete: true,
         }));
         console.log(`📞 Retell greeting sent — proyecto ${projectId}`);
 
-        resolveState({ proyecto: proj, config: cfg });
+        resolveState({ proyecto: proj, config: cfg, callerPhone });
         return;
       }
 
@@ -196,21 +203,37 @@ export function attachRetellWebSocket(server) {
         const state = await stateReady;
         if (!state) return;
 
-        const { proyecto, config } = state;
+        const { proyecto, config, callerPhone } = state;
         const vid = callId || `retell_${projectId}_${Date.now()}`;
         const messages = transcriptToMessages(msg.transcript || []);
 
-        // Skip if transcript is empty (greeting already sent on call_details)
-        if (messages.length === 0) return;
+        // Fallback greeting if transcript arrives empty before first user turn
+        if (messages.length === 0) {
+          const greeting = config.saludo_telefono
+            || config.saludo
+            || `Hola, gracias por llamar a ${config.nombre_negocio || proyecto.nombre}. ¿En qué puedo ayudarte?`;
+          ws.send(JSON.stringify({
+            response_type: 'response',
+            response_id: msg.response_id,
+            content: greeting,
+            content_complete: true,
+          }));
+          return;
+        }
 
-        const [existingLead, unifiedHistory] = await Promise.all([
+        const [existingLead, unifiedHistory, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
           loadExistingLead(projectId, vid),
           loadCustomerHistory(supabase, customerContext?.customer?.id, messages[messages.length - 1]?.content),
+          loadProjectTools(supabase, projectId),
         ]);
         const ecommerce = proyecto.ecommerce_config;
         const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
-        const tools = buildTools(hasEcommerce, ecommerce?.platform, config.enabled_action_tools || []);
-        const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext);
+
+        // enviar_whatsapp siempre disponible en llamadas de voz
+        const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp'])];
+
+        const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools);
+        const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone);
         const agentMessages = unifiedHistory.length ? [...unifiedHistory, messages[messages.length - 1]] : messages;
 
         // ── Streaming hacia Retell: enviamos el texto a medida que el modelo lo genera ──
@@ -237,7 +260,7 @@ export function attachRetellWebSocket(server) {
           reply = await runAgentLoop(
             anthropic,
             { system, tools, messages: agentMessages },
-            { proyecto, vid, canal: 'phone', config, existingLead, customer: customerContext?.customer },
+            { proyecto, vid, canal: 'phone', config, existingLead, toolConfigs, callerPhone, customer: customerContext?.customer },
             4,
             hooks,
           );

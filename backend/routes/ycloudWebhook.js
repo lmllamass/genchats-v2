@@ -10,6 +10,7 @@ import {
   createAnthropicClient,
 } from '../lib/agentCore.js';
 import { loadProjectTools } from '../lib/actionsService.js';
+import { downloadAndTranscribe } from '../lib/audioTranscription.js';
 import {
   loadCustomerHistory,
   recordCustomerMessage,
@@ -38,16 +39,38 @@ router.post('/webhook', async (req, res) => {
       return;
     }
 
-    // ── Only process inbound messages (text or audio/voice) ──────────────
+    // ── Only process inbound messages ────────────────────────────────────
     if (body.type !== 'whatsapp.inbound_message.received') return;
 
     const inbound = body.whatsappInboundMessage;
-    if (!inbound || inbound.type !== 'text' || !inbound.text?.body) return;
+    if (!inbound) return;
 
-    const fromNumber = inbound.from;   // customer phone
-    const toNumber   = inbound.to;     // business phone (our number)
-    const textoCliente = inbound.text.body;
-    const wamid = inbound.id;
+    const fromNumber = inbound.from;
+    const toNumber   = inbound.to;
+    const wamid      = inbound.id;
+
+    let textoCliente = '';
+
+    if (inbound.type === 'text' && inbound.text?.body) {
+      textoCliente = inbound.text.body;
+    } else if (inbound.type === 'audio') {
+      const audioUrl = inbound.audio?.url || inbound.audio?.link;
+      if (!audioUrl) {
+        console.log('[ycloud] Audio message without URL — skipping');
+        return;
+      }
+      try {
+        textoCliente = await downloadAndTranscribe(audioUrl, { language: 'es' });
+        console.log(`[ycloud] Audio transcribed (${fromNumber}): ${textoCliente.slice(0, 80)}`);
+      } catch (err) {
+        console.warn('[ycloud] Audio transcription failed:', err.message);
+        return;
+      }
+    } else {
+      return; // ignore stickers, images, docs, etc.
+    }
+
+    if (!textoCliente) return;
 
     // ── Deduplication ─────────────────────────────────────────────────────
     const { data: existing } = await supabase

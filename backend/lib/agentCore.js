@@ -83,6 +83,18 @@ const ACTION_TOOL_DEFS = {
       required: [],
     },
   },
+  enviar_whatsapp: {
+    name: 'enviar_whatsapp',
+    description: 'Envía un mensaje de WhatsApp al cliente. Úsalo cuando el usuario pida que le mandes información, un enlace, un resumen o cualquier texto por WhatsApp.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        mensaje: { type: 'string', description: 'Texto del mensaje a enviar.' },
+        to:      { type: 'string', description: 'Número en formato internacional. Si no se especifica, se usa el número del interlocutor.' },
+      },
+      required: ['mensaje'],
+    },
+  },
 };
 
 // ── Tool definitions ───────────────────────────────────────────────────────
@@ -145,7 +157,8 @@ export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools =
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
-export async function executeTool(toolName, toolInput, { proyecto, vid, canal, config, existingLead, customer, toolConfigs }) {
+export async function executeTool(toolName, toolInput, toolContext) {
+  const { proyecto, vid, canal, config, existingLead, customer, toolConfigs, callerPhone } = toolContext;
   switch (toolName) {
 
     case 'buscar_productos': {
@@ -277,11 +290,38 @@ export async function executeTool(toolName, toolInput, { proyecto, vid, canal, c
       return { guardado: true, mensaje: 'Datos de contacto registrados correctamente.' };
     }
 
+    case 'enviar_whatsapp': {
+      const to = toolInput.to || callerPhone;
+      if (!to) return 'No tengo el número de WhatsApp del cliente.';
+
+      const waUrl = process.env.N8N_WA_GENERICO_URL
+        || 'https://demo-n8n.v9bpad.easypanel.host/webhook/wa-envio-generico';
+      try {
+        const res = await fetch(waUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to, mensaje: toolInput.mensaje }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(`n8n ${res.status}`);
+        console.log(`📱 WhatsApp enviado a ${to} vía n8n`);
+        return data.ok !== false ? 'WhatsApp enviado correctamente.' : 'No pude enviar el WhatsApp.';
+      } catch (err) {
+        console.error('[enviar_whatsapp] Error:', err.message);
+        return 'Hubo un problema al enviar el WhatsApp.';
+      }
+    }
+
     default: {
       // Delegate to n8n webhook if this is a registered action tool
       if (Object.prototype.hasOwnProperty.call(ACTION_TOOL_DEFS, toolName)) {
         const toolConfig = toolConfigs?.[toolName] || {};
-        const result = await callActionWebhook(proyecto.id, toolName, toolInput, toolConfig);
+        const projectContext = {
+          nombre:               proyecto.nombre,
+          ycloud_api_key:       proyecto.ycloud_api_key || process.env.YCLOUD_API_KEY || '',
+          ycloud_phone_number:  proyecto.ycloud_phone_number || '',
+        };
+        const result = await callActionWebhook(proyecto.id, toolName, toolInput, toolConfig, projectContext);
         return result.mensaje || result.message || (result.ok ? 'Acción completada correctamente.' : 'No se pudo completar la acción.');
       }
       throw new Error(`Tool desconocido: ${toolName}`);

@@ -55,6 +55,7 @@ export default function ChatbotPublic() {
       } else {
         setConfig(data);
         setProjectName(data.nombre_negocio);
+        document.title = data.nombre_negocio || "Asistente Virtual";
         if (data.welcome_message) {
           setMessages([{ role: "assistant", content: data.welcome_message }]);
         }
