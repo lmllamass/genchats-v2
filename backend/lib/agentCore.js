@@ -156,6 +156,41 @@ export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools =
   return tools;
 }
 
+// Aviso por email al dueño cuando se registra un pedido o una cita (fire-and-forget).
+async function notifyOwnerAccion(config, proyecto, canal, titulo, campos) {
+  try {
+    if (!config?.notification_email) return;
+    let resendKey = process.env.RESEND_API_KEY;
+    if (!resendKey) {
+      const { data: cfg } = await supabase.from('config_plataforma').select('resend_api_key').eq('clave', 'plataforma').single();
+      resendKey = cfg?.resend_api_key;
+    }
+    if (!resendKey) return;
+    const rows = Object.entries(campos)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `<p style="margin:5px 0;font-size:14px"><strong>${k}:</strong> ${String(v).replace(/</g, '&lt;')}</p>`)
+      .join('');
+    const resend = new Resend(resendKey);
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@genchats.app';
+    await resend.emails.send({
+      from: `GenChat IA <${fromEmail}>`,
+      to: config.notification_email,
+      subject: `${titulo} — ${config.nombre_negocio || proyecto.nombre}`,
+      html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:28px">
+        <div style="background:linear-gradient(135deg,#7c3aed,#2563eb);padding:20px;border-radius:12px;margin-bottom:20px">
+          <h2 style="color:white;margin:0">${titulo}</h2>
+          <p style="color:rgba(255,255,255,.8);margin:4px 0 0;font-size:13px">${config.nombre_negocio || proyecto.nombre} · Canal: ${canal}</p>
+        </div>
+        ${rows}
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0"/>
+        <p style="color:#9ca3af;font-size:12px">Notificación automática de GenChat IA</p>
+      </div>`,
+    });
+  } catch (e) {
+    console.error('[notifyOwnerAccion] error:', e.message);
+  }
+}
+
 // ── Tool executor ──────────────────────────────────────────────────────────
 export async function executeTool(toolName, toolInput, toolContext) {
   const { proyecto, vid, canal, config, existingLead, customer, toolConfigs, callerPhone } = toolContext;
@@ -312,8 +347,49 @@ export async function executeTool(toolName, toolInput, toolContext) {
       }
     }
 
+    case 'capturar_pedido': {
+      const datos = {};
+      if (toolInput.nombre)    datos.nombre    = toolInput.nombre;
+      if (toolInput.productos) datos.productos = toolInput.productos;
+      if (toolInput.direccion) datos.direccion = toolInput.direccion;
+      if (toolInput.notas)     datos.notas     = toolInput.notas;
+      const { error } = await supabase.from('pedidos').insert({
+        proyecto_id: proyecto.id,
+        visitor_id: vid,
+        canal,
+        datos,
+        telefono_cliente: toolInput.telefono || callerPhone || null,
+        email_cliente: toolInput.email || null,
+      });
+      if (error) { console.error('[capturar_pedido] error:', error.message); return 'No pude registrar el pedido en el sistema. Inténtalo de nuevo.'; }
+      notifyOwnerAccion(config, proyecto, canal, '🛒 Nuevo pedido', {
+        Cliente: toolInput.nombre, Teléfono: toolInput.telefono || callerPhone, Email: toolInput.email,
+        Productos: toolInput.productos, Dirección: toolInput.direccion, Notas: toolInput.notas,
+      });
+      return 'Pedido registrado correctamente. Nos pondremos en contacto para confirmarlo.';
+    }
+
+    case 'concertar_cita': {
+      const { error } = await supabase.from('citas').insert({
+        proyecto_id: proyecto.id,
+        visitor_id: vid,
+        canal,
+        nombre_cliente: toolInput.nombre || null,
+        telefono_cliente: toolInput.telefono || callerPhone || null,
+        email_cliente: toolInput.email || null,
+        fecha_solicitada: toolInput.fecha_preferida || null,
+        motivo: toolInput.motivo || null,
+      });
+      if (error) { console.error('[concertar_cita] error:', error.message); return 'No pude registrar la cita en el sistema. Inténtalo de nuevo.'; }
+      notifyOwnerAccion(config, proyecto, canal, '📅 Nueva cita solicitada', {
+        Cliente: toolInput.nombre, Teléfono: toolInput.telefono || callerPhone, Email: toolInput.email,
+        Fecha: toolInput.fecha_preferida, Motivo: toolInput.motivo,
+      });
+      return 'Cita registrada. Te confirmaremos la disponibilidad en breve.';
+    }
+
     default: {
-      // Delegate to n8n webhook if this is a registered action tool
+      // Delegate to n8n webhook if this is a registered action tool (ej. 'custom')
       if (Object.prototype.hasOwnProperty.call(ACTION_TOOL_DEFS, toolName)) {
         const toolConfig = toolConfigs?.[toolName] || {};
         const projectContext = {
