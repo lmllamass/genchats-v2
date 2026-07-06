@@ -10,7 +10,6 @@ export default function RetellSection({ proyecto }) {
   const { plan, user } = useSubscription();
   const isSuperPro = plan === "super-pro";
   const isActive = proyecto?.retell_activo === true;
-  const projectIsProActivated = ["pro_activo", "activo"].includes(proyecto?.estado);
 
   const [requesting, setRequesting] = useState(false);
   const [requested, setRequested] = useState(false);
@@ -39,8 +38,8 @@ export default function RetellSection({ proyecto }) {
     );
   }
 
-  // STATE A: Not Super Pro → send to pricing
-  if (!isSuperPro && !projectIsProActivated) {
+  // STATE A: Not Super Pro → send to pricing (la voz SÓLO con Super Pro)
+  if (!isSuperPro) {
     return (
       <div className="px-4 py-4">
         <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Voz IA (Retell)</h4>
@@ -69,8 +68,8 @@ export default function RetellSection({ proyecto }) {
       });
       setRequested(true);
       toast.success("Solicitud enviada. Te contactaremos en 24-48h.");
-    } catch {
-      toast.error("Error al enviar la solicitud. Inténtalo de nuevo.");
+    } catch (err) {
+      toast.error(err?.message || "Error al enviar la solicitud. Inténtalo de nuevo.");
     } finally {
       setRequesting(false);
     }

@@ -15,6 +15,26 @@ function getFrom() {
   return `GenChat IA <${addr}>`;
 }
 
+// Verifica el plan del usuario / estado del proyecto para gatear solicitudes de canal.
+// require: 'pro' (Pro o Super Pro) | 'super-pro'. Fail-open si no se puede determinar el plan.
+async function verifyPlan({ user_email, proyecto_id, require }) {
+  let plan = null, estado = null;
+  if (user_email) {
+    const { data } = await supabase.from('user_profiles').select('plan').eq('email', user_email).single().then(x => x, () => ({ data: null }));
+    plan = data?.plan || null;
+  }
+  if (proyecto_id) {
+    const { data } = await supabase.from('proyectos').select('estado').eq('id', proyecto_id).single().then(x => x, () => ({ data: null }));
+    estado = data?.estado || null;
+  }
+  const projectActivated = ['pro_activo', 'activo'].includes(estado);
+  if (plan == null && !projectActivated) return { plan: 'desconocido', allowed: true };
+  const allowed = require === 'super-pro'
+    ? (plan === 'super-pro')
+    : (plan === 'pro' || plan === 'super-pro' || projectActivated);
+  return { plan: plan || (projectActivated ? 'proyecto_activado' : 'free'), allowed };
+}
+
 // POST /api/notify/lead
 router.post('/lead', async (req, res) => {
   try {
@@ -96,6 +116,12 @@ router.post('/whatsapp-request', async (req, res) => {
     const { user_name, user_email, proyecto_nombre, proyecto_id } = req.body;
     if (!user_email) return res.json({ ok: true });
 
+    // Gate de plan: WhatsApp requiere Pro o superior
+    const { plan, allowed } = await verifyPlan({ user_email, proyecto_id, require: 'pro' });
+    if (!allowed) {
+      return res.status(403).json({ ok: false, error: 'plan_insuficiente', mensaje: 'La conexión de WhatsApp requiere el plan Pro. Actualiza tu plan para solicitarla.' });
+    }
+
     const resend = getResend();
     const adminEmail = process.env.ADMIN_EMAIL || 'info@konkabeza.es';
     const appUrl = process.env.APP_URL || 'https://v2.genchats.app';
@@ -103,7 +129,7 @@ router.post('/whatsapp-request', async (req, res) => {
     await resend.emails.send({
       from: getFrom(),
       to: adminEmail,
-      subject: `📲 Solicitud WhatsApp — ${user_name || user_email}`,
+      subject: `📲 Solicitud WhatsApp [${plan}] — ${user_name || user_email}`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px">
           <div style="background:linear-gradient(135deg,#16a34a,#15803d);padding:24px;border-radius:12px;margin-bottom:24px">
@@ -111,7 +137,8 @@ router.post('/whatsapp-request', async (req, res) => {
           </div>
           <p>Un usuario con plan Pro solicita configuración de WhatsApp Business.</p>
           <table style="border-collapse:collapse;width:100%;margin:16px 0">
-            <tr><td style="padding:8px 0;color:#6b7280;width:140px">Usuario</td><td style="padding:8px 0;font-weight:600">${user_name || '—'}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;width:140px">Plan verificado</td><td style="padding:8px 0;font-weight:700;color:#16a34a">${plan}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280">Usuario</td><td style="padding:8px 0;font-weight:600">${user_name || '—'}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280">Email</td><td style="padding:8px 0;font-weight:600">${user_email}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280">Proyecto</td><td style="padding:8px 0;font-weight:600">${proyecto_nombre || '—'}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280">ID proyecto</td><td style="padding:8px 0;font-family:monospace;font-size:13px">${proyecto_id || '—'}</td></tr>
@@ -142,6 +169,12 @@ router.post('/retell-request', async (req, res) => {
     const { user_name, user_email, proyecto_nombre, proyecto_id } = req.body;
     if (!user_email) return res.json({ ok: true });
 
+    // Gate de plan: la voz requiere Super Pro (pro_activo NO basta)
+    const { plan, allowed } = await verifyPlan({ user_email, proyecto_id, require: 'super-pro' });
+    if (!allowed) {
+      return res.status(403).json({ ok: false, error: 'plan_insuficiente', mensaje: 'El agente de voz requiere el plan Super Pro. Actualiza tu plan para solicitarlo.' });
+    }
+
     const resend = getResend();
     const adminEmail = process.env.ADMIN_EMAIL || 'info@konkabeza.es';
     const appUrl = process.env.APP_URL || 'https://v2.genchats.app';
@@ -149,7 +182,7 @@ router.post('/retell-request', async (req, res) => {
     await resend.emails.send({
       from: getFrom(),
       to: adminEmail,
-      subject: `🎙️ Solicitud Voz IA (Retell) — ${user_name || user_email}`,
+      subject: `🎙️ Solicitud Voz IA (Retell) [${plan}] — ${user_name || user_email}`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px">
           <div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:24px;border-radius:12px;margin-bottom:24px">
@@ -157,7 +190,8 @@ router.post('/retell-request', async (req, res) => {
           </div>
           <p>Un usuario con plan Super Pro solicita configuración de agente de voz con Retell.</p>
           <table style="border-collapse:collapse;width:100%;margin:16px 0">
-            <tr><td style="padding:8px 0;color:#6b7280;width:140px">Usuario</td><td style="padding:8px 0;font-weight:600">${user_name || '—'}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;width:140px">Plan verificado</td><td style="padding:8px 0;font-weight:700;color:#7c3aed">${plan}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280">Usuario</td><td style="padding:8px 0;font-weight:600">${user_name || '—'}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280">Email</td><td style="padding:8px 0;font-weight:600">${user_email}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280">Proyecto</td><td style="padding:8px 0;font-weight:600">${proyecto_nombre || '—'}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280">ID proyecto</td><td style="padding:8px 0;font-family:monospace;font-size:13px">${proyecto_id || '—'}</td></tr>

@@ -83,8 +83,8 @@ export default function WhatsAppSection({ proyecto }) {
       });
       setRequested(true);
       toast.success("Solicitud enviada. Te contactaremos en 24-48h.");
-    } catch {
-      toast.error("Error al enviar la solicitud. Inténtalo de nuevo.");
+    } catch (err) {
+      toast.error(err?.message || "Error al enviar la solicitud. Inténtalo de nuevo.");
     } finally {
       setRequesting(false);
     }
