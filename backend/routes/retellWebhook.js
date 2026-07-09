@@ -44,9 +44,10 @@ function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext,
     leadContext = '\n\nREGLA OBLIGATORIA: Si el cliente menciona su nombre, email o teléfono, llama a guardar_contacto DE INMEDIATO.';
   }
 
-  const whatsappNote = callerPhone
+  const whatsappNote = (callerPhone
     ? `\n\nWHATSAPP: Ya conoces el número del cliente porque te está llamando desde él (${callerPhone}). Si pide que le mandes información, un enlace, un resumen o cualquier dato por escrito, usa DIRECTAMENTE la herramienta enviar_whatsapp con to="${callerPhone}" — NO le preguntes su número de teléfono, ya lo tienes. Solo pide un número distinto si el cliente dice explícitamente que quiere recibirlo en otro número.`
-    : '\n\nWHATSAPP: Si el cliente quiere recibir información por escrito, pídele su número de WhatsApp y usa la herramienta enviar_whatsapp.';
+    : '\n\nWHATSAPP: Si el cliente quiere recibir información por escrito, pídele su número de WhatsApp y usa la herramienta enviar_whatsapp.')
+    + '\nSi el cliente te DICTA un número de teléfono en voz alta (el suyo propio o uno distinto), repítelo tú en voz alta dígito a dígito para confirmarlo ANTES de usarlo en enviar_whatsapp ("Confirmo, es el 6-0-9-2-1-1-0-4-0, ¿correcto?") — los números hablados son fáciles de transcribir mal. No lo uses hasta que el cliente confirme que es correcto.';
 
   return `Eres el asistente de voz de "${config.nombre_negocio || proyecto.nombre}".
 Esta es una llamada telefónica real. Habla de forma natural, cercana y concisa.
