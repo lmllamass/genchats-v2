@@ -45,7 +45,7 @@ function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext,
   }
 
   const whatsappNote = callerPhone
-    ? `\n\nWHATSAPP: Si el cliente pide que le mandes información por escrito, usa la herramienta enviar_whatsapp con to="${callerPhone}".`
+    ? `\n\nWHATSAPP: Ya conoces el número del cliente porque te está llamando desde él (${callerPhone}). Si pide que le mandes información, un enlace, un resumen o cualquier dato por escrito, usa DIRECTAMENTE la herramienta enviar_whatsapp con to="${callerPhone}" — NO le preguntes su número de teléfono, ya lo tienes. Solo pide un número distinto si el cliente dice explícitamente que quiere recibirlo en otro número.`
     : '\n\nWHATSAPP: Si el cliente quiere recibir información por escrito, pídele su número de WhatsApp y usa la herramienta enviar_whatsapp.';
 
   return `Eres el asistente de voz de "${config.nombre_negocio || proyecto.nombre}".

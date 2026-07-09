@@ -409,7 +409,7 @@ export async function executeTool(toolName, toolInput, toolContext) {
 /**
  * @param {object} hooks - Streaming hooks (opt-in, sólo voz):
  *   onDelta(text)   -> se llama con cada fragmento de texto del modelo (para TTS en streaming)
- *   onToolStart()   -> se llama una vez al empezar a ejecutar herramientas sin texto previo
+ *   onToolStart()   -> se llama una vez al empezar a ejecutar herramientas (por turno)
  *                      (para enviar una muletilla de espera al cliente)
  * Si no se pasa onDelta, se usa el camino clásico sin streaming (web/WhatsApp/Telegram).
  */
@@ -421,7 +421,6 @@ export async function runAgentLoop(anthropic, { system, tools, messages }, toolC
 
   for (let iter = 0; iter < maxIter; iter++) {
     let response;
-    let sawText = false;
 
     if (streaming) {
       const stream = anthropic.messages.stream({
@@ -431,7 +430,7 @@ export async function runAgentLoop(anthropic, { system, tools, messages }, toolC
         tools,
         messages: currentMessages,
       });
-      stream.on('text', (delta) => { sawText = true; onDelta(delta); });
+      stream.on('text', (delta) => { onDelta(delta); });
       response = await stream.finalMessage();
     } else {
       response = await callWithRetry(() =>
@@ -451,8 +450,11 @@ export async function runAgentLoop(anthropic, { system, tools, messages }, toolC
       return textBlock?.text || 'Lo siento, no pude procesar tu consulta.';
     }
 
-    // Va a ejecutar herramientas: si el modelo no dijo nada antes, lanza una muletilla
-    if (streaming && onToolStart && !sawText && !fillerFired) {
+    // Va a ejecutar herramientas: lanza una muletilla mientras corre (una vez por turno).
+    // No se condiciona a "sin texto previo": Claude casi siempre dice algo natural antes
+    // de llamar a una tool (p.ej. "Perfecto, te lo envío..."), así que esa comprobación
+    // nunca se cumplía en la práctica y la muletilla no sonaba nunca.
+    if (streaming && onToolStart && !fillerFired) {
       fillerFired = true;
       try { onToolStart(); } catch { /* noop */ }
     }
