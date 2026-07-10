@@ -37,11 +37,13 @@ desplegar, verificar en vivo tras cada cambio, y mantener este documento al día
   Todos los datos y API keys de v1 se migraron a v2 (proyectos, leads, pedidos, conversaciones,
   usuarios — ver §8.3). El agente de voz de **Suministros Aguado** (proyecto de prueba principal,
   `cc0cb1d1-d708-4a67-b961-59333874fd27`) ya está repuntado en Retell a `api-v2.genchats.app`.
-- **El envío de WhatsApp desde el agente de voz está limitado por política de Meta**, no por un
-  bug: la ventana de 24h de WhatsApp Business bloquea mensajes proactivos a quien nunca escribió
-  antes por WhatsApp (confirmado con errores reales `131047`/`131026` de la API de YCloud). Se
-  creó una plantilla (`genchats_seguimiento_llamada`) para resolverlo — **pendiente de aprobación
-  de Meta** y de cablear la lógica en el código (ver §5.4 y §11).
+- **El envío de WhatsApp fuera de la ventana de 24h — resuelto (2026-07-10)**: plantilla
+  `genchats_seguimiento_llamada` aprobada por Meta y cableada en `enviar_whatsapp` (v1 y v2):
+  si no hay mensaje del cliente en las últimas 24h, manda la plantilla primero y luego el texto
+  libre. Probado en producción end-to-end (ver §5.4).
+- **Latencia y memoria del agente de voz — 2 bugs corregidos, solo en v2 por ahora (2026-07-10)**:
+  saludo antes de resolver identidad (592ms→248ms) + combinar transcripción completa de la
+  llamada con memoria omnicanal. **Pendiente portar a v1** (ver §5.4).
 - **La BD de v1 en producción es Supabase Cloud** (`plsxmckjdxepawajjthc.supabase.co`), **NO** el
   Postgres self-hosted del VPS (`demo_supabase-db-1`) — ese contenedor es una copia vieja
   abandonada con datos congelados de mayo/junio. Ver §3.1, es una confusión fácil de repetir.
@@ -297,16 +299,22 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
 - **Pronunciación de números**: en Retell, `handbook_config.speech_normalization` debe estar
   **`false`** (si no, pronuncia números de forma rara). `natural_filler_words` de Retell es
   independiente de nuestras propias muletillas.
-- **`enviar_whatsapp` desde voz — limitación real de la plataforma, no un bug**: WhatsApp
-  Business exige que el destinatario haya escrito primero (ventana de 24h) para recibir mensajes
-  de texto libre. Alguien que llama por voz nunca ha escrito por WhatsApp, así que el envío
-  proactivo **siempre falla** (confirmado con la API de YCloud: errores `131047` "more than 24
-  hours have passed..." y `131026` "Message Undeliverable"). El canal de **texto** SÍ funciona
-  siempre porque el cliente escribe primero. **Solución en curso**: plantilla de WhatsApp
-  `genchats_seguimiento_llamada` (creada vía API de YCloud, `officialTemplateId
-  964027180009989`, WABA `1405926177373607`) que abre la ventana de 24h sin necesitar respuesta
-  del cliente; una vez Meta la apruebe, falta cablear en `enviar_whatsapp` la lógica de "si no
-  hay conversación abierta, manda la plantilla primero, luego el mensaje real". **Pendiente.**
+- **`enviar_whatsapp` desde voz — resuelto (2026-07-10, v1 y v2)**: WhatsApp Business exige que
+  el destinatario haya escrito primero (ventana de 24h) para recibir mensajes de texto libre.
+  Alguien que llama por voz nunca ha escrito por WhatsApp, así que el envío proactivo directo
+  **siempre fallaba** (confirmado con la API de YCloud: errores `131047` "more than 24 hours have
+  passed..." y `131026` "Message Undeliverable"). Se creó la plantilla de WhatsApp
+  `genchats_seguimiento_llamada` vía API de YCloud (`officialTemplateId 964027180009989`, WABA
+  `1405926177373607`, **aprobada por Meta el 2026-07-10**) y se cableó en `enviar_whatsapp`
+  (`backend/lib/agentCore.js`, ambas versiones): antes de mandar el mensaje real, comprueba si hay
+  un mensaje del cliente en `mensajes_wa` (`estado='recibido'`) en las últimas 24h; si no lo hay,
+  manda primero la plantilla (variable `{{1}}` = nombre del negocio) y a continuación el mensaje
+  libre. De paso, v2 pasó de mandar estos mensajes vía webhook de n8n a YCloud directo (v1 ya lo
+  hacía así). Probado en producción end-to-end contra la API real de YCloud (plantilla + mensaje
+  aceptados con `status 200`, confirmado por el usuario que llegaron ambos a WhatsApp). Nota: la plantilla solo existe
+  en la cuenta YCloud/WABA de Suministros Aguado por ahora — otros proyectos que necesiten
+  mensajes proactivos fuera de ventana necesitarán su propia plantilla (el código falla de forma
+  controlada si no existe, sin romper el resto del flujo).
 - Campos en `proyectos`: `retell_activo` (bool), `retell_phone_number`, `retell_agent_id`.
 - Telefonía: número SIP externo (Zadarma o Netelip) conectado al trunk de Retell — la recepción
   de la llamada depende de que el proveedor SIP tenga el número activo y bien enrutado, algo
@@ -443,9 +451,12 @@ versiones apuntan al mismo webhook de n8n).
 
 ## 12. Pendientes conocidos
 
-- [ ] Plantilla de WhatsApp `genchats_seguimiento_llamada` — esperando aprobación de Meta.
-- [ ] Cablear en `enviar_whatsapp` la lógica de "plantilla primero si no hay conversación abierta,
-      luego mensaje real" (bloqueado por el punto anterior).
+- [x] Plantilla de WhatsApp `genchats_seguimiento_llamada` — aprobada por Meta (2026-07-10).
+- [x] Cablear en `enviar_whatsapp` la lógica de "plantilla primero si no hay conversación abierta,
+      luego mensaje real" — hecho y probado en producción en v1 y v2 (2026-07-10).
+- [ ] Portar a v1 los 2 fixes de latencia/memoria del agente de voz (§0.5, §5.4) — solo en v2.
+- [ ] Crear plantillas equivalentes para otros proyectos que necesiten WhatsApp proactivo fuera de
+      ventana (de momento solo existe para Suministros Aguado).
 - [ ] Webhook de Stripe propio para v2 (ahora mismo usa el de v1 copiado).
 - [ ] Número de teléfono nuevo para el agente de pruebas de voz de v2 (Netelip, en validación
       ~24h, sin confirmar todavía).
