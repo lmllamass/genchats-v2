@@ -277,6 +277,20 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
      **streaming** y responde en fragmentos (`content_complete:false` hasta el final).
   4. `ping_pong` → eco (keepalive).
 - **Muletillas**: array `FILLERS`, se dispara siempre al iniciar una tool (ver §4).
+- **Latencia y memoria — 2 bugs medidos y corregidos (2026-07-10, solo v2 por ahora)**:
+  1. El saludo esperaba a `resolveCustomerIdentity` (~9-10 llamadas secuenciales a BD, **592ms
+     medidos**) sin necesitarlo. Se movió el envío del saludo antes de esa resolución →
+     **248ms medidos tras el fix** (resto es red pura, no procesamiento).
+  2. `agentMessages` sustituía la transcripción completa de la llamada actual (que Retell manda
+     gratis en cada turno) por el historial omnicanal (`unifiedHistory`) en cuanto éste existía,
+     dejando solo la última frase del cliente — el agente "olvidaba" lo dicho en la propia
+     llamada a partir del 2º-3er turno. Ahora se combina: transcripción completa de Retell +
+     contexto de OTROS canales (filtrando `[phone]` para no duplicar), con guarda de alternancia
+     estricta user/assistant (requisito de la API de Anthropic). Verificado en vivo con 3 turnos:
+     el agente recuerda el nombre dado en el turno 1 al preguntarle en el turno 3.
+  - Análisis completo (por qué NO conviene migrar a agentes nativos de Retell/YCloud como
+    alternativa a esto) hecho con `/superpowers` el 2026-07-10 — la causa real eran estos 2 bugs
+    de implementación, no una limitación de arquitectura. **Pendiente: portar a v1.**
 - **Confirmación de números dictados**: si el cliente dicta un teléfono de viva voz, el agente
   lo repite dígito a dígito y pide confirmación antes de usarlo — evita errores de transcripción
   STT (se detectó un caso real: `609212140` en vez de `609211040`).
