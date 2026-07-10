@@ -329,18 +329,70 @@ export async function executeTool(toolName, toolInput, toolContext) {
       const to = toolInput.to || callerPhone;
       if (!to) return 'No tengo el número de WhatsApp del cliente.';
 
-      const waUrl = process.env.N8N_WA_GENERICO_URL
-        || 'https://demo-n8n.v9bpad.easypanel.host/webhook/wa-envio-generico';
+      const apiKey = proyecto.ycloud_api_key || process.env.YCLOUD_API_KEY;
+      const fromNumber = proyecto.ycloud_phone_number;
+      if (!apiKey || !fromNumber) return 'WhatsApp no está configurado para este negocio.';
+
       try {
-        const res = await fetch(waUrl, {
+        // ¿Ventana de conversación abierta? (mensaje del cliente en las últimas 24h)
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data: lastInbound } = await supabase
+          .from('mensajes_wa')
+          .select('created_at')
+          .eq('proyecto_id', proyecto.id)
+          .eq('from_number', to)
+          .eq('estado', 'recibido')
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const windowOpen = !!lastInbound?.length;
+
+        // Si no hay ventana abierta, primero se manda la plantilla aprobada por Meta
+        // para abrir la conversación (fuera de la ventana solo se permite enviar plantillas).
+        if (!windowOpen) {
+          const businessName = config?.nombre_negocio || proyecto.nombre || 'nuestro negocio';
+          const templateRes = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
+            method: 'POST',
+            headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              from: fromNumber,
+              to,
+              type: 'template',
+              template: {
+                name: 'genchats_seguimiento_llamada',
+                language: { code: 'es' },
+                components: [{ type: 'body', parameters: [{ type: 'text', text: businessName }] }],
+              },
+            }),
+          });
+          if (!templateRes.ok) {
+            const errData = await templateRes.json().catch(() => ({}));
+            console.error('[enviar_whatsapp] plantilla error:', errData);
+            return 'No pude iniciar la conversación de WhatsApp con el cliente.';
+          }
+          console.log(`📱 Plantilla de apertura enviada a ${to}`);
+        }
+
+        const res = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to, mensaje: toolInput.mensaje }),
+          headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: fromNumber, to, type: 'text', text: { body: toolInput.mensaje } }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(`n8n ${res.status}`);
-        console.log(`📱 WhatsApp enviado a ${to} vía n8n`);
-        return data.ok !== false ? 'WhatsApp enviado correctamente.' : 'No pude enviar el WhatsApp.';
+        if (!res.ok) throw new Error(data?.message || `YCloud ${res.status}`);
+
+        await supabase.from('mensajes_wa').insert({
+          proyecto_id: proyecto.id,
+          from_number: fromNumber,
+          to_number: to,
+          mensaje: toolInput.mensaje,
+          wamid: data.id || null,
+          estado: 'enviado',
+        }).then(null, () => {});
+
+        console.log(`📱 WhatsApp enviado a ${to} vía YCloud (${windowOpen ? 'ventana abierta' : 'con plantilla previa'})`);
+        return 'WhatsApp enviado correctamente.';
       } catch (err) {
         console.error('[enviar_whatsapp] Error:', err.message);
         return 'Hubo un problema al enviar el WhatsApp.';
