@@ -159,6 +159,23 @@ export function attachRetellWebSocket(server) {
           ? JSON.parse(proj.chatbot_config)
           : (proj.chatbot_config || {});
 
+        // Send greeting FIRST — must not wait on resolveCustomerIdentity (measured ~600ms of
+        // sequential DB round trips) nor on response_required. The greeting text doesn't depend
+        // on customer identity at all.
+        const greeting = cfg.saludo_telefono
+          || cfg.saludo
+          || `Hola, gracias por llamar a ${cfg.nombre_negocio || proj.nombre}. ¿En qué puedo ayudarte?`;
+
+        ws.send(JSON.stringify({
+          response_type: 'response',
+          response_id: 0,
+          content: greeting,
+          content_complete: true,
+        }));
+        console.log(`📞 Retell greeting sent — proyecto ${projectId}`);
+
+        // Resolve customer identity AFTER the greeting is already on the wire. Subsequent turns
+        // await `stateReady` (resolved below), so this still finishes before it's needed.
         customerContext = await resolveCustomerIdentity(supabase, {
           proyecto: proj,
           channel: 'phone',
@@ -175,19 +192,6 @@ export function attachRetellWebSocket(server) {
           console.warn('[identity] retell resolve failed:', err.message);
           return null;
         });
-
-        // Send greeting immediately — don't wait for response_required
-        const greeting = cfg.saludo_telefono
-          || cfg.saludo
-          || `Hola, gracias por llamar a ${cfg.nombre_negocio || proj.nombre}. ¿En qué puedo ayudarte?`;
-
-        ws.send(JSON.stringify({
-          response_type: 'response',
-          response_id: 0,
-          content: greeting,
-          content_complete: true,
-        }));
-        console.log(`📞 Retell greeting sent — proyecto ${projectId}`);
 
         resolveState({ proyecto: proj, config: cfg, callerPhone });
         return;
@@ -235,7 +239,19 @@ export function attachRetellWebSocket(server) {
 
         const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools);
         const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone);
-        const agentMessages = unifiedHistory.length ? [...unifiedHistory, messages[messages.length - 1]] : messages;
+        // Retell nos da la transcripción COMPLETA de esta llamada en cada turno (gratis, en vivo) —
+        // nunca hay que descartarla. `unifiedHistory` solo aporta valor para contexto de OTROS
+        // canales/llamadas anteriores; sus propias entradas de esta misma llamada ('[phone] ...',
+        // escritas de forma asíncrona tras cada turno) ya están duplicadas en `messages`, así que
+        // se excluyen para no repetir contexto ni desplazar turnos reales de la llamada actual.
+        const crossChannelHistory = unifiedHistory.filter(m => !m.content.startsWith('[phone]'));
+        // Anthropic exige alternancia estricta user/assistant. `messages` (transcript de Retell)
+        // siempre empieza en 'user', así que si el historial cruzado también terminara en 'user'
+        // (pregunta de otro canal sin respuesta registrada) se descarta esa última entrada.
+        while (crossChannelHistory.length && crossChannelHistory[crossChannelHistory.length - 1].role === 'user') {
+          crossChannelHistory.pop();
+        }
+        const agentMessages = crossChannelHistory.length ? [...crossChannelHistory, ...messages] : messages;
 
         // ── Streaming hacia Retell: enviamos el texto a medida que el modelo lo genera ──
         let streamed = false;
