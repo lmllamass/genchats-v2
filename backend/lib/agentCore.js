@@ -348,39 +348,39 @@ export async function executeTool(toolName, toolInput, toolContext) {
 
         const windowOpen = !!lastInbound?.length;
 
-        // Si no hay ventana abierta, primero se manda la plantilla aprobada por Meta
-        // para abrir la conversación (fuera de la ventana solo se permite enviar plantillas).
-        if (!windowOpen) {
+        // Enviar plantilla que manda el mensaje NO abre la ventana de 24h por sí sola
+        // (solo la abre una respuesta real del cliente), así que si la ventana está
+        // cerrada el mensaje completo va DENTRO de la plantilla, en una sola llamada.
+        let sendBody;
+        if (windowOpen) {
+          sendBody = { from: fromNumber, to, type: 'text', text: { body: toolInput.mensaje } };
+        } else {
           const businessName = config?.nombre_negocio || proyecto.nombre || 'nuestro negocio';
-          const templateRes = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
-            method: 'POST',
-            headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              from: fromNumber,
-              to,
-              type: 'template',
-              template: {
-                name: 'genchats_seguimiento_llamada',
-                language: { code: 'es' },
-                components: [{ type: 'body', parameters: [{ type: 'text', text: businessName }] }],
-              },
-            }),
-          });
-          if (!templateRes.ok) {
-            const errData = await templateRes.json().catch(() => ({}));
-            console.error('[enviar_whatsapp] plantilla error:', errData);
-            return 'No pude iniciar la conversación de WhatsApp con el cliente.';
-          }
-          console.log(`📱 Plantilla de apertura enviada a ${to}`);
+          // Las variables de plantilla no admiten saltos de línea ni espacios múltiples.
+          let mensajeVar = toolInput.mensaje.replace(/\s*\n+\s*/g, ' · ').replace(/\s{2,}/g, ' ').trim();
+          if (mensajeVar.length > 900) mensajeVar = mensajeVar.slice(0, 897) + '...';
+          sendBody = {
+            from: fromNumber,
+            to,
+            type: 'template',
+            template: {
+              name: 'genchats_info_agente',
+              language: { code: 'es' },
+              components: [{ type: 'body', parameters: [{ type: 'text', text: businessName }, { type: 'text', text: mensajeVar }] }],
+            },
+          };
         }
 
         const res = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
           method: 'POST',
           headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: fromNumber, to, type: 'text', text: { body: toolInput.mensaje } }),
+          body: JSON.stringify(sendBody),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || `YCloud ${res.status}`);
+        if (!res.ok) {
+          console.error('[enviar_whatsapp] YCloud error:', data);
+          throw new Error(data?.message || `YCloud ${res.status}`);
+        }
 
         await supabase.from('mensajes_wa').insert({
           proyecto_id: proyecto.id,
@@ -391,7 +391,7 @@ export async function executeTool(toolName, toolInput, toolContext) {
           estado: 'enviado',
         }).then(null, () => {});
 
-        console.log(`📱 WhatsApp enviado a ${to} vía YCloud (${windowOpen ? 'ventana abierta' : 'con plantilla previa'})`);
+        console.log(`📱 WhatsApp enviado a ${to} vía YCloud (${windowOpen ? 'ventana abierta' : 'vía plantilla genchats_info_agente'})`);
         return 'WhatsApp enviado correctamente.';
       } catch (err) {
         console.error('[enviar_whatsapp] Error:', err.message);
