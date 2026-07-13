@@ -37,10 +37,11 @@ desplegar, verificar en vivo tras cada cambio, y mantener este documento al día
   Todos los datos y API keys de v1 se migraron a v2 (proyectos, leads, pedidos, conversaciones,
   usuarios — ver §8.3). El agente de voz de **Suministros Aguado** (proyecto de prueba principal,
   `cc0cb1d1-d708-4a67-b961-59333874fd27`) ya está repuntado en Retell a `api-v2.genchats.app`.
-- **El envío de WhatsApp fuera de la ventana de 24h — resuelto (2026-07-10)**: plantilla
-  `genchats_seguimiento_llamada` aprobada por Meta y cableada en `enviar_whatsapp` (v1 y v2):
-  si no hay mensaje del cliente en las últimas 24h, manda la plantilla primero y luego el texto
-  libre. Probado en producción end-to-end (ver §5.4).
+- **El envío de WhatsApp fuera de la ventana de 24h — fix real desplegado (2026-07-13)**: el
+  primer intento (plantilla + texto libre después) NO funcionaba, mandar una plantilla no abre
+  la ventana por sí sola. Ahora el mensaje va entero como variable DENTRO de la plantilla
+  `genchats_info_agente` (una sola llamada). Nueva plantilla **pendiente de aprobación de Meta**
+  (ver §5.4).
 - **Latencia y memoria del agente de voz — 2 bugs corregidos, solo en v2 por ahora (2026-07-10)**:
   saludo antes de resolver identidad (592ms→248ms) + combinar transcripción completa de la
   llamada con memoria omnicanal. **Pendiente portar a v1** (ver §5.4).
@@ -299,22 +300,29 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
 - **Pronunciación de números**: en Retell, `handbook_config.speech_normalization` debe estar
   **`false`** (si no, pronuncia números de forma rara). `natural_filler_words` de Retell es
   independiente de nuestras propias muletillas.
-- **`enviar_whatsapp` desde voz — resuelto (2026-07-10, v1 y v2)**: WhatsApp Business exige que
-  el destinatario haya escrito primero (ventana de 24h) para recibir mensajes de texto libre.
-  Alguien que llama por voz nunca ha escrito por WhatsApp, así que el envío proactivo directo
-  **siempre fallaba** (confirmado con la API de YCloud: errores `131047` "more than 24 hours have
-  passed..." y `131026` "Message Undeliverable"). Se creó la plantilla de WhatsApp
-  `genchats_seguimiento_llamada` vía API de YCloud (`officialTemplateId 964027180009989`, WABA
-  `1405926177373607`, **aprobada por Meta el 2026-07-10**) y se cableó en `enviar_whatsapp`
-  (`backend/lib/agentCore.js`, ambas versiones): antes de mandar el mensaje real, comprueba si hay
-  un mensaje del cliente en `mensajes_wa` (`estado='recibido'`) en las últimas 24h; si no lo hay,
-  manda primero la plantilla (variable `{{1}}` = nombre del negocio) y a continuación el mensaje
-  libre. De paso, v2 pasó de mandar estos mensajes vía webhook de n8n a YCloud directo (v1 ya lo
-  hacía así). Probado en producción end-to-end contra la API real de YCloud (plantilla + mensaje
-  aceptados con `status 200`, confirmado por el usuario que llegaron ambos a WhatsApp). Nota: la plantilla solo existe
-  en la cuenta YCloud/WABA de Suministros Aguado por ahora — otros proyectos que necesiten
-  mensajes proactivos fuera de ventana necesitarán su propia plantilla (el código falla de forma
-  controlada si no existe, sin romper el resto del flujo).
+- **`enviar_whatsapp` desde voz — resuelto de verdad (2026-07-13, v1 y v2)**: WhatsApp Business
+  exige que el destinatario haya escrito primero (ventana de 24h) para recibir mensajes de texto
+  libre. Alguien que llama por voz nunca ha escrito por WhatsApp, así que el envío proactivo
+  directo **siempre fallaba** (confirmado con la API de YCloud: errores `131047` "more than 24
+  hours have passed..." y `131026` "Message Undeliverable").
+  - **Primer intento (2026-07-10, fallido en producción)**: crear la plantilla
+    `genchats_seguimiento_llamada` (aprobada por Meta) y mandarla primero, seguida del mensaje
+    libre. **Esto no funciona**: enviar una plantilla NO abre la ventana de 24h por sí sola, solo
+    la abre una respuesta REAL del cliente. Se detectó en producción con mensajes reales que
+    fallaban con `131047` justo después de mandar la plantilla (confirmado consultando el estado
+    real de los `wamid` en la API de YCloud, no solo el `status: accepted` del envío).
+  - **Fix real (2026-07-13)**: nueva plantilla `genchats_info_agente` (WABA
+    `1405926177373607`, `officialTemplateId 1776480350164818`, cuerpo con 2 variables: `{{1}}`
+    nombre del negocio, `{{2}}` el mensaje completo del agente) — el mensaje va ENTERO dentro de
+    la plantilla en una sola llamada cuando la ventana está cerrada, sin depender de que el
+    cliente responda. Las variables de plantilla no admiten saltos de línea ni espacios múltiples,
+    así que el mensaje se sanea (`\n` → ` · `, colapsa espacios, cap ~900 caracteres) antes de
+    mandarlo. Si la ventana SÍ está abierta, se sigue mandando texto libre normal (sin cambios).
+    Pendiente de aprobación de Meta (creada el 2026-07-13, PENDING).
+  - v2 pasó de usar n8n a YCloud directo para este flujo (v1 ya lo hacía así).
+  - Nota: la plantilla solo existe en la cuenta YCloud/WABA de Suministros Aguado por ahora —
+    otros proyectos que necesiten WhatsApp proactivo fuera de ventana necesitarán su propia
+    plantilla (el código falla de forma controlada si no existe o no está aprobada).
 - Campos en `proyectos`: `retell_activo` (bool), `retell_phone_number`, `retell_agent_id`.
 - Telefonía: número SIP externo (Zadarma o Netelip) conectado al trunk de Retell — la recepción
   de la llamada depende de que el proveedor SIP tenga el número activo y bien enrutado, algo
@@ -451,9 +459,11 @@ versiones apuntan al mismo webhook de n8n).
 
 ## 12. Pendientes conocidos
 
-- [x] Plantilla de WhatsApp `genchats_seguimiento_llamada` — aprobada por Meta (2026-07-10).
-- [x] Cablear en `enviar_whatsapp` la lógica de "plantilla primero si no hay conversación abierta,
-      luego mensaje real" — hecho y probado en producción en v1 y v2 (2026-07-10).
+- [x] ~~Plantilla `genchats_seguimiento_llamada` + texto libre después~~ — descartado: mandar una
+      plantilla no abre la ventana de 24h por sí sola, seguía fallando en producción (131047).
+- [ ] Plantilla `genchats_info_agente` (mensaje completo como variable) — creada el 2026-07-13,
+      **pendiente de aprobación de Meta**. Una vez aprobada, verificar en producción que el envío
+      fuera de ventana funciona de forma consistente (no solo cuando el cliente contesta).
 - [ ] Portar a v1 los 2 fixes de latencia/memoria del agente de voz (§0.5, §5.4) — solo en v2.
 - [ ] Crear plantillas equivalentes para otros proyectos que necesiten WhatsApp proactivo fuera de
       ventana (de momento solo existe para Suministros Aguado).
