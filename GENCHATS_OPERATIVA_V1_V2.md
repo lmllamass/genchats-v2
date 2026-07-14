@@ -37,11 +37,11 @@ desplegar, verificar en vivo tras cada cambio, y mantener este documento al día
   Todos los datos y API keys de v1 se migraron a v2 (proyectos, leads, pedidos, conversaciones,
   usuarios — ver §8.3). El agente de voz de **Suministros Aguado** (proyecto de prueba principal,
   `cc0cb1d1-d708-4a67-b961-59333874fd27`) ya está repuntado en Retell a `api-v2.genchats.app`.
-- **El envío de WhatsApp fuera de la ventana de 24h — fix real desplegado (2026-07-13)**: el
-  primer intento (plantilla + texto libre después) NO funcionaba, mandar una plantilla no abre
-  la ventana por sí sola. Ahora el mensaje va entero como variable DENTRO de la plantilla
-  `genchats_info_agente` (una sola llamada). Nueva plantilla **pendiente de aprobación de Meta**
-  (ver §5.4).
+- **El envío de WhatsApp fuera de la ventana de 24h — resuelto y confirmado en producción
+  (2026-07-14)**: el primer intento (plantilla + texto libre después) NO funcionaba, mandar una
+  plantilla no abre la ventana por sí sola. Ahora el mensaje va entero como variable DENTRO de la
+  plantilla `genchats_info_agente` (una sola llamada), aprobada por Meta y probada con llamada
+  real (ver §5.4).
 - **Latencia y memoria del agente de voz — 2 bugs corregidos, solo en v2 por ahora (2026-07-10)**:
   saludo antes de resolver identidad (592ms→248ms) + combinar transcripción completa de la
   llamada con memoria omnicanal. **Pendiente portar a v1** (ver §5.4).
@@ -318,7 +318,9 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
     cliente responda. Las variables de plantilla no admiten saltos de línea ni espacios múltiples,
     así que el mensaje se sanea (`\n` → ` · `, colapsa espacios, cap ~900 caracteres) antes de
     mandarlo. Si la ventana SÍ está abierta, se sigue mandando texto libre normal (sin cambios).
-    Pendiente de aprobación de Meta (creada el 2026-07-13, PENDING).
+    **Aprobada por Meta el 2026-07-14 y confirmada funcionando en producción** (probado con
+    llamada real al agente de voz de Suministros Aguado enviando WhatsApp a un número que no
+    había escrito antes).
   - v2 pasó de usar n8n a YCloud directo para este flujo (v1 ya lo hacía así).
   - Nota: la plantilla solo existe en la cuenta YCloud/WABA de Suministros Aguado por ahora —
     otros proyectos que necesiten WhatsApp proactivo fuera de ventana necesitarán su propia
@@ -461,9 +463,8 @@ versiones apuntan al mismo webhook de n8n).
 
 - [x] ~~Plantilla `genchats_seguimiento_llamada` + texto libre después~~ — descartado: mandar una
       plantilla no abre la ventana de 24h por sí sola, seguía fallando en producción (131047).
-- [ ] Plantilla `genchats_info_agente` (mensaje completo como variable) — creada el 2026-07-13,
-      **pendiente de aprobación de Meta**. Una vez aprobada, verificar en producción que el envío
-      fuera de ventana funciona de forma consistente (no solo cuando el cliente contesta).
+- [x] Plantilla `genchats_info_agente` (mensaje completo como variable) — aprobada por Meta el
+      2026-07-14 y confirmado por el usuario que el envío de WhatsApp fuera de ventana funciona.
 - [ ] Portar a v1 los 2 fixes de latencia/memoria del agente de voz (§0.5, §5.4) — solo en v2.
 - [ ] Crear plantillas equivalentes para otros proyectos que necesiten WhatsApp proactivo fuera de
       ventana (de momento solo existe para Suministros Aguado).
