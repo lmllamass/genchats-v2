@@ -1,8 +1,9 @@
 /* global __BUILD_TIME__ */
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Plus, MessageCircle, Shield, Crown, User, Users } from "lucide-react";
+import { LayoutDashboard, Plus, MessageCircle, Shield, Crown, User, Users, LogOut } from "lucide-react";
 import { motion } from "framer-motion";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useAuth } from "@/lib/AuthContext";
 import TrialBanner from "@/components/TrialBanner";
 
 const NAV = [
@@ -15,6 +16,7 @@ const NAV = [
 
 export default function Layout() {
   const { isAdmin } = useSubscription();
+  const { logout } = useAuth();
   return (
     <div className="min-h-screen flex bg-background bg-grid">
       <aside className="hidden md:flex w-64 flex-col border-r border-sidebar-border bg-sidebar sticky top-0 h-screen">
@@ -50,6 +52,15 @@ export default function Layout() {
             </NavLink>
           </div>
         )}
+        <div className="p-3 border-t border-sidebar-border">
+          <button
+            type="button"
+            onClick={() => logout("/")}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full text-left text-sidebar-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+          >
+            <LogOut className="w-4 h-4" /><span>Cerrar sesión</span>
+          </button>
+        </div>
         <div className="p-4 border-t border-sidebar-border">
           <div className="text-[11px] text-muted-foreground/70 leading-relaxed">Crea chatbots inteligentes para tu negocio.</div>
         </div>
@@ -60,7 +71,17 @@ export default function Layout() {
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center"><MessageCircle className="w-4 h-4 text-white" /></div>
             <span className="font-display font-bold">GenChats IA</span>
           </Link>
-          <Link to="/nuevo" className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium">+ Chatbot</Link>
+          <div className="flex items-center gap-2">
+            <Link to="/nuevo" className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium">+ Chatbot</Link>
+            <button
+              type="button"
+              onClick={() => logout("/")}
+              aria-label="Cerrar sesión"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         <TrialBanner />
         <Outlet />
