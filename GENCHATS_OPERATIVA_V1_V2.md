@@ -325,6 +325,18 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
   - Nota: la plantilla solo existe en la cuenta YCloud/WABA de Suministros Aguado por ahora —
     otros proyectos que necesiten WhatsApp proactivo fuera de ventana necesitarán su propia
     plantilla (el código falla de forma controlada si no existe o no está aprobada).
+  - **Bug relacionado — el WhatsApp enviado desde voz no incluía enlaces de producto
+    (2026-07-18, v1 y v2)**: el prompt de voz (`buildPhoneSystemPrompt` en
+    `backend/routes/retellWebhook.js`) tiene reglas de FORMATO para lo hablado ("sin Markdown,
+    sin URLs, sin corchetes, no ofrezcas webs por iniciativa propia") que, al ser un único system
+    prompt para todo el turno, se aplicaban también al texto que Claude escribe en el parámetro
+    `mensaje` de la herramienta `enviar_whatsapp` — así que el agente omitía los enlaces de
+    producto (líneas `👉` del resultado de `buscar_productos`) también en el WhatsApp, algo que sí
+    hace bien en el canal WhatsApp normal (que tiene su propio `formatInstructions` en
+    `agentCore.js` que exige copiarlos literalmente). Fix: se añadió una nota explícita en el
+    `whatsappNote`/`waNote` del prompt de voz aclarando que las restricciones de FORMATO son solo
+    para lo hablado, y que el contenido de `mensaje` para `enviar_whatsapp` SÍ debe incluir los
+    enlaces literalmente.
 - Campos en `proyectos`: `retell_activo` (bool), `retell_phone_number`, `retell_agent_id`.
 - Telefonía: número SIP externo (Zadarma o Netelip) conectado al trunk de Retell — la recepción
   de la llamada depende de que el proveedor SIP tenga el número activo y bien enrutado, algo
