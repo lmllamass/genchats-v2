@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useSubscription } from "@/hooks/useSubscription";
 import WhatsAppModeSelector from "./WhatsAppModeSelector";
 import WhatsAppConversations from "./WhatsAppConversations";
+import WhatsAppTemplates from "./WhatsAppTemplates";
 
 export default function WhatsAppSection({ proyecto }) {
   const { plan, user } = useSubscription();
@@ -48,6 +49,7 @@ export default function WhatsAppSection({ proyecto }) {
           </div>
         </div>
         <WhatsAppModeSelector proyecto={proyecto} />
+        <WhatsAppTemplates proyectoId={proyecto.id} />
         <WhatsAppConversations proyectoId={proyecto.id} />
       </div>
     );

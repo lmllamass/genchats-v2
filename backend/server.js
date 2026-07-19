@@ -31,6 +31,7 @@ import conversationsRouter from './routes/conversations.js';
 import leadsRouter from './routes/leads.js';
 import { attachRetellWebSocket } from './routes/retellWebhook.js';
 import monitorRouter from './routes/monitor.js';
+import whatsappTemplatesRouter from './routes/whatsappTemplates.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -94,6 +95,7 @@ app.use('/api/telegram', telegramWebhookRouter);
 app.use('/api/gena',    genaRouter);
 app.use('/api/conversations', requireAuth, conversationsRouter);
 app.use('/api/leads', requireAuth, leadsRouter);
+app.use('/api/whatsapp-templates', requireAuth, whatsappTemplatesRouter);
 
 // ── Error handler ──
 app.use((err, req, res, next) => {

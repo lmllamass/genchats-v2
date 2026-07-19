@@ -165,6 +165,9 @@ CREATE TABLE IF NOT EXISTS config_plataforma (
   resend_api_key TEXT,
   resend_from_email TEXT DEFAULT 'noreply@pagegen.ai',
 
+  -- Firecrawl
+  firecrawl_api_key TEXT,
+
   -- Límites
   limite_mensajes_global INTEGER DEFAULT 200,
   notas_admin TEXT

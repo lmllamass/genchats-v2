@@ -157,4 +157,12 @@ export const api = {
     apiFetchAuth('/api/leads/templates', { method: 'POST', body: JSON.stringify(data) }),
   deleteLeadTemplate: (id) =>
     apiFetchAuth(`/api/leads/templates/${id}`, { method: 'DELETE' }),
+
+  // Meta WhatsApp templates (per-tenant, via YCloud)
+  listWhatsAppTemplates: (proyectoId) =>
+    apiFetchAuth(`/api/whatsapp-templates?proyecto_id=${proyectoId}`),
+  createWhatsAppTemplate: (data) =>
+    apiFetchAuth('/api/whatsapp-templates', { method: 'POST', body: JSON.stringify(data) }),
+  deleteWhatsAppTemplate: (proyectoId, name, language) =>
+    apiFetchAuth(`/api/whatsapp-templates/${encodeURIComponent(name)}?proyecto_id=${proyectoId}${language ? `&language=${language}` : ''}`, { method: 'DELETE' }),
 };
