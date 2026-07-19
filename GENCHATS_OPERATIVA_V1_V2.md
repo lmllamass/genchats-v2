@@ -487,7 +487,19 @@ versiones apuntan al mismo webhook de n8n).
 - [ ] Re-verificar estado de migraciones de v1 contra su BD Cloud real (§8.2 se hizo sobre la
       copia self-hosted equivocada).
 - [ ] Stripe modo LIVE completo si aún queda algo en test.
-- [ ] Rotar el PAT expuesto en la URL del remote git.
+- [ ] Rotar el PAT de GitHub: el 2026-07-19 se limpió de las URLs de los remotes (ahora van por
+      el Llavero de macOS, helper `osxkeychain`, y las URLs son las normales sin token), pero el
+      token viejo sigue siendo válido y anduvo expuesto en texto plano — hay que **revocarlo en
+      github.com → Settings → Developer settings → Personal access tokens** y crear uno nuevo
+      (guardarlo solo en el Llavero, nunca en la URL del remote).
+- [ ] **Plantillas WhatsApp self-service por tenant (v2, commiteado 2026-07-19, SIN desplegar)**:
+      gestión de plantillas Meta del WABA del proyecto vía YCloud — `backend/routes/
+      whatsappTemplates.js` (listar/crear/borrar, montado en `/api/whatsapp-templates` con
+      `requireAuth`), componente `WhatsAppTemplates.jsx` en `WhatsAppSection.jsx`, métodos en
+      `backendApi.js`, y migración `008_config_plataforma_firecrawl.sql` (columna
+      `firecrawl_api_key` en `config_plataforma`). **Antes del próximo deploy de v2**: aplicar la
+      migración 008 en el SQL Editor de la Supabase Cloud de v2 (no hay acceso DDL, ver §8.4) y
+      probar la pantalla nueva.
 
 ---
 
