@@ -239,6 +239,20 @@ ssh root@72.62.24.150 "docker exec genchats-v2-api node -e \"...\""             
 | `markdownToWhatsApp(text)` | Markdown → texto WhatsApp |
 | `loadHistory` / `loadExistingLead` | Contexto de conversación y lead existente |
 
+**`loadHistory` — bug de memoria "corta" corregido (2026-07-20, v1 y v2)**: cargaba el
+historial con `order(created_at, ascending:true).limit(30)`, que en Postgres/Supabase
+devuelve los **30 mensajes MÁS ANTIGUOS** de toda la conversación, no los más recientes. En
+clientes recurrentes (WhatsApp/Telegram/web) con más de 30 mensajes acumulados, el agente
+quedaba anclado en el principio de la conversación y perdía todo lo hablado después —
+percibido como "memoria muy corta". Confirmado en producción: el número
+`+34689656122` de Suministros Aguado tenía 214 mensajes acumulados y el agente solo veía
+los primeros 30. Fix: `order(ascending:false).limit(40)` + `reverse()` a cronológico (trae
+los 40 más recientes de verdad), y de paso se subió el límite de 20 a 40 mensajes — barato
+en tokens porque los mensajes de WhatsApp suelen ser cortos (~25-30 caracteres de media en
+la muestra real revisada). Esto es compartido por web/WhatsApp/Telegram (`chatbotRespond.js`,
+`ycloudWebhook.js`, `telegramWebhook.js`); la voz (Retell) usa su propio mecanismo de
+memoria omnicanal (`customerIdentityService.js`, solo v2), no pasa por `loadHistory`.
+
 **Streaming en voz (solo Retell, no afecta a web/WhatsApp/Telegram):** `runAgentLoop` acepta
 `hooks.onDelta` (token a token, recorta el tiempo hasta la primera sílaba) y `hooks.onToolStart`
 (dispara una muletilla — "Un momento, estoy localizando tu petición" — al empezar a ejecutar
