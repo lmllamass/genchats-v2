@@ -459,6 +459,16 @@ versiones apuntan al mismo webhook de n8n).
   `errorCode` real. Si es `131047`/`131026` → es la ventana de 24h de Meta, no un bug (§5.4).
   Solo funciona si el cliente ya había escrito antes por WhatsApp, o tras aprobarse la plantilla.
 
+**El bot responde "Lo sentimos, hemos alcanzado el límite de mensajes este mes" (WhatsApp/Telegram)**
+- Es el límite mensual PROPIO de la plataforma (`proyectos.mensajes_mes >= limite_mensajes`,
+  default 200) — **no es de Meta ni se arregla pagando nada**. Además `mensajes_mes` **no se
+  resetea solo** (no hay cron): hay que ponerlo a 0 a mano en la BD (pasó el 2026-07-20 con
+  Suministros Aguado).
+- ⚠️ El webhook entrante de YCloud (WhatsApp) **sigue apuntando a v1** (`api.genchats.app`) —
+  solo la voz (Retell) está repuntada a v2. El canal WhatsApp corre en v1 con SU BD y SUS
+  contadores; si el límite salta, resetéalo en la BD de v1, no en la de v2. (El envío SALIENTE
+  desde el agente de voz de v2 vía YCloud no pasa por este check.)
+
 **El agente no ejecuta acciones (cita/pedido/stock)**
 1. `project_tools` con `enabled = true` para ese proyecto (admin → ToolsProjectSection).
 2. Si es `capturar_pedido`/`concertar_cita`/`enviar_whatsapp`: son nativas, no dependen de n8n —
