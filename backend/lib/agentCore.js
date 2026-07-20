@@ -645,22 +645,26 @@ export function markdownToWhatsApp(text) {
 
 // ── Shared conversation history loader ────────────────────────────────────
 export async function loadHistory(proyecto_id, visitor_id, currentMessage) {
+  // order(ascending:false) + limit trae los últimos N mensajes reales; luego se invierten a
+  // orden cronológico. (Antes se pedía ascending+limit, que en conversaciones largas siempre
+  // devolvía los N mensajes MÁS ANTIGUOS de toda la historia, no los más recientes — el agente
+  // "olvidaba" todo lo hablado después del mensaje 30 en clientes recurrentes.)
   const { data: historial } = await supabase
     .from('conversaciones_chat')
     .select('role,content')
     .eq('proyecto_id', proyecto_id)
     .eq('visitor_id', visitor_id)
-    .order('created_at', { ascending: true })
-    .limit(30);
+    .order('created_at', { ascending: false })
+    .limit(40);
 
   let history = [];
   if (historial) {
-    for (let i = 0; i < historial.length; i++) {
+    const cronologico = [...historial].reverse();
+    for (let i = 0; i < cronologico.length; i++) {
       // Skip the message just inserted (last user message)
-      if (i === historial.length - 1 && historial[i].role === 'user' && historial[i].content === currentMessage) continue;
-      history.push({ role: historial[i].role, content: historial[i].content });
+      if (i === cronologico.length - 1 && cronologico[i].role === 'user' && cronologico[i].content === currentMessage) continue;
+      history.push({ role: cronologico[i].role, content: cronologico[i].content });
     }
-    if (history.length > 20) history = history.slice(-20);
   }
   return history;
 }
