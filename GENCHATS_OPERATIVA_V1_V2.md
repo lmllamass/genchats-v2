@@ -161,7 +161,12 @@ teléfono/email) y el agente ve el historial unificado entre canales. En v1 esto
 
 ### 3.3 Deploy
 
-**v1** (desde `/Users/lmllamas/Desktop/genchats`, `./scripts/deploy.sh`):
+> 📁 **Ruta local desde 2026-07-20**: `~/Library/Mobile Documents/com~apple~CloudDocs/konkabeza/genchats`
+> (movido desde `~/Desktop/genchats`, donde queda un symlink). `node_modules` es symlink a
+> `node_modules.nosync` en ambas versiones para que iCloud no lo sincronice ni lo evicte
+> (la eviction de iCloud colgaba los builds de vite).
+
+**v1** (desde la raíz del repo, `./scripts/deploy.sh`):
 ```bash
 ./scripts/deploy.sh            # frontend + backend
 ./scripts/deploy.sh backend    # solo backend (empaqueta, scp, valida sintaxis, pm2 restart)
