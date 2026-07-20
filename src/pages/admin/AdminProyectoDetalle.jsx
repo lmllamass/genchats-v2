@@ -2,7 +2,7 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Proyecto } from "@/api/entidades";
 import { api } from "@/api/backendApi";
-import { ArrowLeft, Loader2, Zap } from "lucide-react";
+import { ArrowLeft, Loader2, Zap, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import WhatsAppProjectSection from "@/components/admin/WhatsAppProjectSection";
@@ -109,6 +109,27 @@ export default function AdminProyectoDetalle() {
           <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/10 text-white/50 border border-white/10">
             ID: {proyecto.id}
           </span>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+              (proyecto.mensajes_mes || 0) >= (proyecto.limite_mensajes || 200)
+                ? "bg-red-500/20 text-red-300 border-red-500/30"
+                : "bg-white/10 text-white/50 border-white/10"
+            }`}
+            title="Mensajes usados este mes / límite (proyectos.mensajes_mes / limite_mensajes). No se resetea solo — hay un cron mensual, o usa el botón de al lado."
+          >
+            Mensajes mes: {proyecto.mensajes_mes || 0} / {proyecto.limite_mensajes || 200}
+          </span>
+          <button
+            onClick={() => {
+              if (!confirm(`¿Resetear el contador de mensajes de "${proyecto.nombre}" a 0?`)) return;
+              updateMut.mutate({ mensajes_mes: 0 });
+            }}
+            disabled={updateMut.isPending}
+            title="Poner mensajes_mes a 0 para este proyecto"
+            className="px-2 py-0.5 rounded-full text-[10px] font-medium border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <RotateCcw className="w-2.5 h-2.5" /> Resetear mensajes
+          </button>
         </div>
       </div>
 

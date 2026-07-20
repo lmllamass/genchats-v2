@@ -4,7 +4,7 @@ import { Proyecto, UserProfile } from "@/api/entidades";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Trash2, Eye, MessageSquare, Save, Loader2, X, Phone, Bot } from "lucide-react";
+import { Search, Trash2, Eye, MessageSquare, Save, Loader2, X, Phone, Bot, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
@@ -45,6 +45,15 @@ export default function AdminProyectos() {
       setDeleteProject(null);
       toast.success("Proyecto eliminado");
     },
+  });
+
+  const resetMensajesTodosMut = useMutation({
+    mutationFn: () => api.adminResetMensajesTodos(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-proyectos"] });
+      toast.success("✅ Contador de mensajes reseteado en todos los proyectos");
+    },
+    onError: (e) => toast.error("Error: " + e.message),
   });
 
   // Uses backend service role to bypass RLS — admin can update any project
@@ -141,11 +150,26 @@ export default function AdminProyectos() {
           </h1>
           <p className="text-muted-foreground mt-2">{proyectos.length} proyecto{proyectos.length !== 1 ? "s" : ""} totales</p>
         </div>
-        {filterOwner && (
-          <Button variant="outline" size="sm" onClick={() => setFilterOwner("")}>
-            <X className="w-3 h-3 mr-1" /> Quitar filtro usuario
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={resetMensajesTodosMut.isPending}
+            onClick={() => {
+              if (!confirm("¿Resetear el contador mensual de mensajes a 0 en TODOS los proyectos?")) return;
+              resetMensajesTodosMut.mutate();
+            }}
+            title="También corre solo el día 1 de cada mes — este botón es para forzarlo fuera de ciclo"
+          >
+            {resetMensajesTodosMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RotateCcw className="w-3 h-3 mr-1" />}
+            Resetear mensajes (todos)
           </Button>
-        )}
+          {filterOwner && (
+            <Button variant="outline" size="sm" onClick={() => setFilterOwner("")}>
+              <X className="w-3 h-3 mr-1" /> Quitar filtro usuario
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-3 mb-6 flex-wrap">

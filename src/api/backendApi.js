@@ -96,6 +96,12 @@ export const api = {
   adminTelegramRegisterWebhook: (proyecto_id) =>
     apiFetchAuth('/api/admin/telegram/registrar-webhook', { method: 'POST', body: JSON.stringify({ proyecto_id }) }),
 
+  // Reset manual del contador mensual de mensajes (TODOS los proyectos). También corre solo
+  // por cron el día 1 de cada mes (backend/scripts/resetMensajesMensual.js) — este botón es
+  // para forzarlo fuera de ciclo (p.ej. antes de una demo).
+  adminResetMensajesTodos: () =>
+    apiFetchAuth('/api/admin/reset-mensajes', { method: 'POST' }),
+
   // Update any project bypassing RLS (admin only, uses service role)
   adminUpdateProyecto: (id, data) =>
     apiFetchAuth(`/api/admin/proyectos/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
