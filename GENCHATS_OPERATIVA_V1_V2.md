@@ -461,12 +461,25 @@ versiones apuntan al mismo webhook de n8n).
 
 **El bot responde "Lo sentimos, hemos alcanzado el límite de mensajes este mes" (WhatsApp/Telegram)**
 - Es el límite mensual PROPIO de la plataforma (`proyectos.mensajes_mes >= limite_mensajes`,
-  default 200) — **no es de Meta ni se arregla pagando nada**. Además `mensajes_mes` **no se
-  resetea solo** (no hay cron): hay que ponerlo a 0 a mano en la BD (pasó el 2026-07-20 con
-  Suministros Aguado).
+  default 200) — **no es de Meta ni se arregla pagando nada**.
+- **Reset automático (desde 2026-07-20)**: cron en el VPS ejecuta
+  `backend/scripts/resetMensajesMensual.js` el día 1 de cada mes a las 00:05 (v1, en el host
+  vía `node`) y 00:10 (v2, `docker exec genchats-v2-api node scripts/...`) — pone
+  `mensajes_mes = 0` en TODOS los proyectos de esa BD. Logs en
+  `/root/logs/genchats-reset-mensajes.log` del VPS. El script habla directo con Supabase
+  (service role), no pasa por el endpoint HTTP (ese exige JWT de admin, poco práctico en cron).
+- **Reset manual (mismo día)**: en el admin, botón "Resetear mensajes" en la ficha de cada
+  proyecto (`AdminProyectoDetalle`, resetea solo ese proyecto) y botón "Resetear mensajes
+  (todos)" en el listado (`AdminProyectos`, resetea todos — reutiliza el endpoint ya existente
+  `POST /api/admin/reset-mensajes`). Útil para forzarlo fuera de ciclo, p.ej. antes de una demo
+  (así se resolvió el corte del 2026-07-20 con Suministros Aguado).
+- ⚠️ **Al añadir `scripts/` al backend de v1 hubo que tocar `scripts/deploy.sh`**: el deploy de
+  backend solo copiaba `routes/`, `lib/` y `server.js` al host — cualquier carpeta nueva bajo
+  `backend/` se pierde en el despliegue si no se añade explícitamente ahí. Ya corregido.
 - ⚠️ El webhook entrante de YCloud (WhatsApp) **sigue apuntando a v1** (`api.genchats.app`) —
   solo la voz (Retell) está repuntada a v2. El canal WhatsApp corre en v1 con SU BD y SUS
-  contadores; si el límite salta, resetéalo en la BD de v1, no en la de v2. (El envío SALIENTE
+  contadores; si el límite salta, resetéalo en la BD de v1, no en la de v2 (el cron y los
+  botones de admin ya cubren ambas por separado). (El envío SALIENTE
   desde el agente de voz de v2 vía YCloud no pasa por este check.)
 
 **El agente no ejecuta acciones (cita/pedido/stock)**
@@ -507,14 +520,16 @@ versiones apuntan al mismo webhook de n8n).
       token viejo sigue siendo válido y anduvo expuesto en texto plano — hay que **revocarlo en
       github.com → Settings → Developer settings → Personal access tokens** y crear uno nuevo
       (guardarlo solo en el Llavero, nunca en la URL del remote).
-- [ ] **Plantillas WhatsApp self-service por tenant (v2, commiteado 2026-07-19, SIN desplegar)**:
-      gestión de plantillas Meta del WABA del proyecto vía YCloud — `backend/routes/
-      whatsappTemplates.js` (listar/crear/borrar, montado en `/api/whatsapp-templates` con
-      `requireAuth`), componente `WhatsAppTemplates.jsx` en `WhatsAppSection.jsx`, métodos en
-      `backendApi.js`, y migración `008_config_plataforma_firecrawl.sql` (columna
-      `firecrawl_api_key` en `config_plataforma`). **Antes del próximo deploy de v2**: aplicar la
-      migración 008 en el SQL Editor de la Supabase Cloud de v2 (no hay acceso DDL, ver §8.4) y
-      probar la pantalla nueva.
+- [ ] **Plantillas WhatsApp self-service por tenant (v2, DESPLEGADO 2026-07-20, migración
+      pendiente)**: gestión de plantillas Meta del WABA del proyecto vía YCloud —
+      `backend/routes/whatsappTemplates.js`, componente `WhatsAppTemplates.jsx` en
+      `WhatsAppSection.jsx`. Ya está en producción (`genchats-v2-api`/`-frontend` reconstruidos
+      2026-07-20), pero la migración `008_config_plataforma_firecrawl.sql` (columna
+      `firecrawl_api_key` en `config_plataforma`) **aún no se ha aplicado** en el SQL Editor de
+      la Supabase Cloud de v2 (no hay acceso DDL, ver §8.4) — el bloque Firecrawl de
+      `AdminConfiguracion` puede fallar hasta aplicarla. Probar la pantalla de plantillas nueva.
+- [x] Reset mensual del contador de mensajes (2026-07-20): cron en el VPS (día 1 de mes, v1 y
+      v2 por separado) + botones manuales en el admin (por proyecto y global) — ver runbook §11.
 
 ---
 
