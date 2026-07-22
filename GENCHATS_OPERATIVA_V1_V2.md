@@ -344,6 +344,20 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
   - Nota: la plantilla solo existe en la cuenta YCloud/WABA de Suministros Aguado por ahora —
     otros proyectos que necesiten WhatsApp proactivo fuera de ventana necesitarán su propia
     plantilla (el código falla de forma controlada si no existe o no está aprobada).
+  - **"El agente de voz ha dejado de enviar WhatsApp" (investigado 2026-07-22) — el proyecto
+    de Suministros Aguado NUNCA usó el `+34689656122`** (ese número es de KonKabeza, solo
+    aparece en las páginas de marketing propias de genchats.app —footer, aviso legal,
+    privacidad, MiCuenta—, no en ningún código de envío de tenants). `proyecto.ycloud_phone_number`
+    ya estaba correctamente en `+34627318261` (verificado en vivo contra la API de YCloud:
+    WABA `1405926177373607`, status `CONNECTED`, calidad `GREEN`) y una llamada de prueba real
+    ese mismo día lo confirmó funcionando y entregado. **Lo que sí estaba roto** (no relacionado
+    con Suministros Aguado, pero real): el fallback global `YCLOUD_API_KEY` en
+    `backend/.env.production`/`.env` de v1 y v2 tenía la API key de Suministros Aguado
+    **pegada dos veces sin separador** (64 caracteres en vez de 32 → 401 de YCloud). No afectaba
+    a Suministros Aguado (tiene su propia key en la BD, con prioridad), pero sí a cualquier otro
+    proyecto sin `ycloud_api_key` propia que intente usar `enviar_whatsapp` (p.ej. "Test GenChats
+    V2", que tiene voz activa sin key propia). Corregido dejando una sola copia de la key y
+    reiniciando ambos servicios.
   - **Bug relacionado — el WhatsApp enviado desde voz no incluía enlaces de producto
     (2026-07-18, v1 y v2)**: el prompt de voz (`buildPhoneSystemPrompt` en
     `backend/routes/retellWebhook.js`) tiene reglas de FORMATO para lo hablado ("sin Markdown,
