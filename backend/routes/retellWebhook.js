@@ -71,7 +71,7 @@ COMPORTAMIENTO:
 - Sé breve: no recites listas largas; resume y pregunta en qué concretar.
 
 INFORMACIÓN DEL NEGOCIO:
-${config.knowledge_base || config.descripcion || 'Sin información adicional.'}
+${config.knowledge_base_voz || config.knowledge_base || config.descripcion || 'Sin información adicional.'}
 
 CONTACTO (compártelo sólo si el cliente lo pide):
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
