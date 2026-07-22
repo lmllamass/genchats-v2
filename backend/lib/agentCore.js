@@ -9,6 +9,17 @@ import { supabase } from '../server.js';
 import { queryEcommerce, formatProducts } from './ecommerceConnectors.js';
 import { callActionWebhook } from './actionsService.js';
 import { buildCustomerMemoryPrompt, updateCustomerFromContact } from './customerIdentityService.js';
+import { isSlotFree, createCalendarEvent } from './googleCalendar.js';
+
+// ── Fecha/hora actual, para que el modelo calcule fechas relativas ("mañana", "el lunes") ──
+export function currentDateTimeLine() {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('es-ES', {
+    timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+  return `FECHA Y HORA ACTUAL: ${fmt.format(now)} (hora de España). Úsala para calcular cualquier fecha relativa ("mañana", "el lunes que viene", "en dos semanas").`;
+}
 
 // ── Retry helper (handles 529 Overloaded) ──────────────────────────────────
 export async function callWithRetry(fn, maxRetries = 3) {
@@ -30,14 +41,16 @@ export async function callWithRetry(fn, maxRetries = 3) {
 const ACTION_TOOL_DEFS = {
   concertar_cita: {
     name: 'concertar_cita',
-    description: 'Concertar una cita, reserva o visita para el cliente. Úsalo cuando el usuario quiera reservar, programar una cita o acordar una fecha.',
+    description: 'Concertar una cita, reserva o visita para el cliente. Úsalo cuando el usuario quiera reservar, programar una cita o acordar una fecha. Antes de llamarla, calcula fecha_hora_iso a partir de la FECHA Y HORA ACTUAL que tienes en el contexto y de lo que diga el cliente.',
     input_schema: {
       type: 'object',
       properties: {
-        nombre:          { type: 'string', description: 'Nombre completo del cliente' },
-        telefono:        { type: 'string', description: 'Teléfono de contacto' },
-        email:           { type: 'string', description: 'Email del cliente' },
-        fecha_preferida: { type: 'string', description: 'Fecha y hora preferida (ej: "mañana a las 10h", "15 de julio por la tarde")' },
+        nombre:            { type: 'string', description: 'Nombre completo del cliente' },
+        telefono:          { type: 'string', description: 'Teléfono de contacto' },
+        email:             { type: 'string', description: 'Email del cliente' },
+        fecha_preferida:   { type: 'string', description: 'Fecha y hora preferida, tal como la dijo el cliente (ej: "mañana a las 10h", "15 de julio por la tarde") — para mostrarla tal cual en el aviso al dueño' },
+        fecha_hora_iso:    { type: 'string', description: 'La misma fecha y hora, pero calculada por ti en formato ISO 8601 con offset horario de España (ej: "2026-07-25T10:00:00+02:00"). Si el cliente no da una hora exacta, usa una hora razonable en horario laboral (ej. 10:00). Obligatorio si quieres que la cita se añada de verdad al calendario.' },
+        duracion_minutos:  { type: 'number', description: 'Duración estimada de la cita en minutos. Si no lo sabes, usa 30.' },
         motivo:          { type: 'string', description: 'Servicio o motivo de la cita' },
       },
       required: [],
@@ -422,6 +435,35 @@ export async function executeTool(toolName, toolInput, toolContext) {
     }
 
     case 'concertar_cita': {
+      const calendarId = toolConfigs?.concertar_cita?.calendar_id;
+      const duracion = toolInput.duracion_minutos || 30;
+      let calendarEventId = null;
+
+      if (calendarId && toolInput.fecha_hora_iso) {
+        try {
+          const libre = await isSlotFree(calendarId, toolInput.fecha_hora_iso, duracion);
+          if (!libre) {
+            return 'Ese horario ya está ocupado en el calendario. ¿Puede el cliente proponer otra fecha u hora?';
+          }
+          const event = await createCalendarEvent(calendarId, {
+            summary: `Cita: ${toolInput.nombre || 'Cliente'}${toolInput.motivo ? ' — ' + toolInput.motivo : ''}`,
+            description: [
+              toolInput.nombre ? `Cliente: ${toolInput.nombre}` : null,
+              (toolInput.telefono || callerPhone) ? `Teléfono: ${toolInput.telefono || callerPhone}` : null,
+              toolInput.email ? `Email: ${toolInput.email}` : null,
+              toolInput.motivo ? `Motivo: ${toolInput.motivo}` : null,
+              `Reservado vía ${canal} con GenChats.`,
+            ].filter(Boolean).join('\n'),
+            startISO: toolInput.fecha_hora_iso,
+            durationMinutes: duracion,
+          });
+          calendarEventId = event.id;
+        } catch (err) {
+          console.error('[concertar_cita] Google Calendar error:', err.message);
+          // Degrada con elegancia: seguimos registrando la cita internamente aunque falle el calendario.
+        }
+      }
+
       const { error } = await supabase.from('citas').insert({
         proyecto_id: proyecto.id,
         visitor_id: vid,
@@ -429,15 +471,18 @@ export async function executeTool(toolName, toolInput, toolContext) {
         nombre_cliente: toolInput.nombre || null,
         telefono_cliente: toolInput.telefono || callerPhone || null,
         email_cliente: toolInput.email || null,
-        fecha_solicitada: toolInput.fecha_preferida || null,
+        fecha_solicitada: toolInput.fecha_preferida || toolInput.fecha_hora_iso || null,
         motivo: toolInput.motivo || null,
+        calendar_event_id: calendarEventId,
       });
       if (error) { console.error('[concertar_cita] error:', error.message); return 'No pude registrar la cita en el sistema. Inténtalo de nuevo.'; }
-      notifyOwnerAccion(config, proyecto, canal, '📅 Nueva cita solicitada', {
+      notifyOwnerAccion(config, proyecto, canal, calendarEventId ? '📅 Nueva cita (añadida al calendario)' : '📅 Nueva cita solicitada', {
         Cliente: toolInput.nombre, Teléfono: toolInput.telefono || callerPhone, Email: toolInput.email,
-        Fecha: toolInput.fecha_preferida, Motivo: toolInput.motivo,
+        Fecha: toolInput.fecha_preferida || toolInput.fecha_hora_iso, Motivo: toolInput.motivo,
       });
-      return 'Cita registrada. Te confirmaremos la disponibilidad en breve.';
+      return calendarEventId
+        ? 'Cita confirmada y añadida al calendario.'
+        : 'Cita registrada. Te confirmaremos la disponibilidad en breve.';
     }
 
     default: {
@@ -610,6 +655,8 @@ export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web',
   return `Eres el asistente virtual de "${config.nombre_negocio}".
 Responde de forma amable, clara y concisa. Máximo 4-5 frases salvo que sean listas de productos.
 Responde siempre en el idioma del usuario.
+
+${currentDateTimeLine()}
 
 INFORMACIÓN DEL NEGOCIO:
 ${config.knowledge_base || config.descripcion || 'Sin información adicional.'}

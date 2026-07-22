@@ -134,6 +134,13 @@ export const api = {
   adminDeleteProjectTool: (projectId, toolId) =>
     apiFetchAuth(`/api/admin/proyectos/${projectId}/tools/${toolId}`, { method: 'DELETE' }),
 
+  // Google Calendar (concertar_cita)
+  adminGetGoogleCalendarServiceAccountEmail: () =>
+    apiFetchAuth('/api/admin/google-calendar/service-account-email'),
+
+  adminCheckGoogleCalendar: (calendar_id) =>
+    apiFetchAuth('/api/admin/google-calendar/check', { method: 'POST', body: JSON.stringify({ calendar_id }) }),
+
   // Conversations inbox
   listConversations: (params = {}) => {
     const q = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v != null))).toString();

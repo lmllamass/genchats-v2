@@ -1,6 +1,7 @@
 import express from 'express';
 import { Resend } from 'resend';
 import { supabase } from '../server.js';
+import { checkCalendarAccess, getServiceAccountEmail } from '../lib/googleCalendar.js';
 
 const router = express.Router();
 
@@ -348,6 +349,20 @@ router.delete('/proyectos/:id/tools/:toolId', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Google Calendar (concertar_cita) ───────────────────────────────────────
+
+// GET /api/admin/google-calendar/service-account-email
+router.get('/google-calendar/service-account-email', (req, res) => {
+  res.json({ email: getServiceAccountEmail() });
+});
+
+// POST /api/admin/google-calendar/check — { calendar_id } → confirma que tenemos acceso real
+router.post('/google-calendar/check', async (req, res) => {
+  const { calendar_id } = req.body;
+  const result = await checkCalendarAccess(calendar_id);
+  res.json(result);
 });
 
 export default router;

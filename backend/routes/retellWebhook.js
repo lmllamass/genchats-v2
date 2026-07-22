@@ -5,6 +5,7 @@ import {
   runAgentLoop,
   loadExistingLead,
   createAnthropicClient,
+  currentDateTimeLine,
 } from '../lib/agentCore.js';
 import {
   buildCustomerMemoryPrompt,
@@ -50,8 +51,12 @@ function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext,
     + '\nSi el cliente te DICTA un número de teléfono en voz alta (el suyo propio o uno distinto), repítelo tú en voz alta dígito a dígito para confirmarlo ANTES de usarlo en enviar_whatsapp ("Confirmo, es el 6-0-9-2-1-1-0-4-0, ¿correcto?") — los números hablados son fáciles de transcribir mal. No lo uses hasta que el cliente confirme que es correcto.'
     + '\nIMPORTANTE: el texto que escribas en el parámetro "mensaje" de enviar_whatsapp NO tiene las restricciones del habla — no lo resumas ni omitas enlaces. Cuando el resultado de buscar_productos incluya URLs de producto (líneas con 👉), CÓPIALAS LITERALMENTE dentro de ese mensaje de WhatsApp; el cliente las necesita para ver la ficha. Las reglas de "sin webs, sin URLs, sin corchetes" del apartado FORMATO son solo para lo que dices en voz durante la llamada.';
 
+  const bookingNote = '\n\nCITAS: Si el cliente quiere reservar o concertar una cita, confírmale en voz la fecha y hora que has entendido antes de usar concertar_cita ("Entonces, mañana martes a las diez de la mañana, ¿correcto?") — igual que con los números de teléfono, para evitar errores de transcripción. Calcula fecha_hora_iso a partir de la FECHA Y HORA ACTUAL de este contexto.';
+
   return `Eres el asistente de voz de "${config.nombre_negocio || proyecto.nombre}".
 Esta es una llamada telefónica real. Habla de forma natural, cercana y concisa.
+
+${currentDateTimeLine()}
 
 FORMATO (Voz / Teléfono):
 - Máximo 2-3 frases cortas por respuesta. Una idea por frase.
@@ -77,7 +82,7 @@ CONTACTO (compártelo sólo si el cliente lo pide):
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
-${ecommerceNote}${leadContext}${whatsappNote}${buildCustomerMemoryPrompt(customerContext)}`;
+${ecommerceNote}${leadContext}${whatsappNote}${bookingNote}${buildCustomerMemoryPrompt(customerContext)}`;
 }
 
 function transcriptToMessages(transcript) {

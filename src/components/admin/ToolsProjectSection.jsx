@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/backendApi";
 import { Button } from "@/components/ui/button";
-import { Loader2, Zap, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Zap, ChevronDown, ChevronUp, CheckCircle2, XCircle, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 const TOOL_META = {
@@ -59,6 +59,17 @@ function ToolRow({ projectId, toolName, existing }) {
   const isEnabled = existing?.enabled ?? false;
   const [expanded, setExpanded] = useState(isEnabled);
   const [config, setConfig] = useState(existing?.config || {});
+  const [calCheck, setCalCheck] = useState(null); // { ok, error, summary, timeZone }
+  const [checking, setChecking] = useState(false);
+
+  const isCalendar = toolName === "concertar_cita";
+
+  const { data: saEmail } = useQuery({
+    queryKey: ["google-calendar-sa-email"],
+    queryFn: () => api.adminGetGoogleCalendarServiceAccountEmail().then(r => r.email),
+    enabled: isCalendar && expanded,
+    staleTime: Infinity,
+  });
 
   const upsertMut = useMutation({
     mutationFn: (data) => api.adminUpsertProjectTool(projectId, { tool_name: toolName, ...data }),
@@ -75,7 +86,23 @@ function ToolRow({ projectId, toolName, existing }) {
     if (next) setExpanded(true);
   };
 
-  const handleSaveConfig = () => {
+  const handleCheckCalendar = async () => {
+    setChecking(true);
+    setCalCheck(null);
+    try {
+      const result = await api.adminCheckGoogleCalendar(config.calendar_id);
+      setCalCheck(result);
+    } catch (e) {
+      setCalCheck({ ok: false, error: e.message });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    if (isCalendar && config.calendar_id) {
+      await handleCheckCalendar();
+    }
     upsertMut.mutate({ enabled: isEnabled, config });
   };
 
@@ -108,6 +135,21 @@ function ToolRow({ projectId, toolName, existing }) {
       {/* Config fields */}
       {expanded && (
         <div className="border-t border-white/10 p-4 space-y-3 bg-white/[0.02]">
+          {isCalendar && (
+            <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 space-y-1">
+              <p className="text-[11px] text-blue-300">
+                Para que el agente pueda crear citas de verdad, comparte el calendario de Google con esta cuenta de servicio (permiso "Realizar cambios en eventos"):
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-[11px] text-blue-200 font-mono break-all">{saEmail || "cargando…"}</code>
+                {saEmail && (
+                  <button type="button" onClick={() => { navigator.clipboard.writeText(saEmail); toast.success("Copiado"); }} className="text-blue-400 hover:text-blue-300 shrink-0">
+                    <Copy className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {meta.fields.map(f => (
             <div key={f.key}>
               <label className="text-[11px] text-white/40 font-medium block mb-1">{f.label}</label>
@@ -119,14 +161,33 @@ function ToolRow({ projectId, toolName, existing }) {
               />
             </div>
           ))}
+          {isCalendar && calCheck && (
+            <div className={`flex items-start gap-2 text-xs rounded-lg p-2.5 ${calCheck.ok ? "bg-green-500/10 text-green-300 border border-green-500/20" : "bg-red-500/10 text-red-300 border border-red-500/20"}`}>
+              {calCheck.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+              <span>{calCheck.ok ? `Conectado a "${calCheck.summary}" (${calCheck.timeZone}).` : calCheck.error}</span>
+            </div>
+          )}
+          <div className="flex gap-2">
           <Button
             size="sm"
             onClick={handleSaveConfig}
-            disabled={upsertMut.isPending}
+            disabled={upsertMut.isPending || checking}
             className="bg-white/10 hover:bg-white/20 text-white border-0"
           >
-            {upsertMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Guardar configuración"}
+            {(upsertMut.isPending || checking) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Guardar configuración"}
           </Button>
+          {isCalendar && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCheckCalendar}
+              disabled={checking || !config.calendar_id}
+              className="bg-transparent border-white/10 text-white/70 hover:bg-white/5"
+            >
+              {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Comprobar conexión"}
+            </Button>
+          )}
+          </div>
         </div>
       )}
     </div>
@@ -145,11 +206,12 @@ export default function ToolsProjectSection({ proyecto }) {
     <div className="rounded-2xl border border-white/10 bg-white/5 p-6 mt-6">
       <div className="flex items-center gap-2 mb-5">
         <Zap className="w-4 h-4 text-orange-400" />
-        <h3 className="font-display font-semibold text-white">Herramientas / Acciones (n8n)</h3>
+        <h3 className="font-display font-semibold text-white">Herramientas / Acciones</h3>
       </div>
       <p className="text-xs text-white/40 mb-5">
-        Activa las acciones que el agente puede ejecutar vía n8n. Cada acción requiere configurar el webhook
-        <span className="font-mono text-white/60"> N8N_ACTIONS_WEBHOOK_URL</span> en el backend.
+        Activa las acciones que el agente puede ejecutar. "Concertar cita" y "Capturar pedido" son nativas
+        (no requieren n8n). "Consultar stock" y "Acción personalizada" pasan por un webhook n8n
+        (<span className="font-mono text-white/60">N8N_ACTIONS_WEBHOOK_URL</span> en el backend).
       </p>
 
       {isLoading ? (

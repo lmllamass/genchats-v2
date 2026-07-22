@@ -389,6 +389,48 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
 
 ---
 
+## 5.5 Google Calendar — reservas reales (2026-07-22, v1 y v2)
+
+**Antes de esta fecha, `concertar_cita` era 100% cosmético**: el campo "Google Calendar ID" del
+admin (`ToolsProjectSection.jsx`) se guardaba en `project_tools.config` pero ningún código lo
+leía — la tool solo insertaba en la tabla interna `citas` + email al dueño. No había ni
+`googleapis` instalado ni credenciales de ningún tipo. Ahora sí crea el evento real:
+
+- **`backend/lib/googleCalendar.js`** (nuevo, idéntico en v1 y v2): usa **una cuenta de servicio
+  de Google compartida por toda la plataforma** (`GOOGLE_CALENDAR_SA_KEY` en el `.env`, JSON de
+  la cuenta de servicio o su base64) — no hay OAuth por tenant. Cada tenant comparte SU PROPIO
+  calendario de Google con el email de esa cuenta de servicio (permiso "Realizar cambios en
+  eventos") y pega el Calendar ID en el admin.
+  - `checkCalendarAccess(calendarId)` — confirma que tenemos acceso real (usado por el botón
+    "Comprobar conexión" del admin y automáticamente al pulsar "Guardar configuración").
+  - `isSlotFree(calendarId, startISO, duracionMin)` — `freebusy.query`, evita doble reserva.
+  - `createCalendarEvent(...)` — crea el evento. `sendUpdates: 'none'` a propósito: NO manda
+    invitación de Google al cliente (sería un email inesperado desde una cuenta de servicio
+    desconocida) — el aviso al dueño lo sigue mandando `notifyOwnerAccion` como siempre.
+- **`concertar_cita` (agentCore.js)**: si el proyecto tiene `calendar_id` configurado Y el
+  modelo rellenó `fecha_hora_iso`, comprueba disponibilidad y crea el evento; si algo falla
+  (calendario no compartido, sin fecha ISO, error de API) **degrada con elegancia** — sigue
+  registrando la cita en `citas` igual que antes, solo que sin `calendar_event_id`.
+- **Nuevo parámetro `fecha_hora_iso`** en el schema de la tool (además de `fecha_preferida`,
+  que se mantiene para mostrar tal cual al dueño): el modelo debe calcularlo él mismo a partir
+  de la fecha actual. Para que pueda hacerlo bien con fechas relativas ("mañana", "el lunes que
+  viene"), se añadió **`currentDateTimeLine()`** (agentCore.js, exportada) — inyecta la fecha y
+  hora reales (huso `Europe/Madrid`) al principio del system prompt en los 4 canales (antes
+  NUNCA se le decía al modelo qué día era).
+- **Admin (`ToolsProjectSection.jsx`)**: para "Concertar cita" ahora se ve el email de la cuenta
+  de servicio a compartir (con botón copiar), un botón "Comprobar conexión" y el resultado en
+  vivo (✅/❌). También se corrigió el texto de cabecera de la sección, que decía "vía n8n" para
+  TODAS las acciones — solo `custom` (y `consultar_stock`, que tampoco tiene case nativo) van
+  por n8n; `concertar_cita` y `capturar_pedido` son nativas.
+- **Migración pendiente de aplicar** (una por cada Supabase, no hay acceso DDL — ver §8.4):
+  añade `citas.calendar_event_id` — `genchats-v2/supabase-migrations/009_citas_calendar_event_id.sql`
+  (v2) y `supabase/migrations/20250101010010_citas_calendar_event_id.sql` (v1).
+- **Pendiente de que el usuario complete** (no lo puedo hacer yo, requiere su cuenta de Google
+  Cloud): crear la cuenta de servicio, activar la API de Calendar, generar la clave JSON, y
+  poner `GOOGLE_CALENDAR_SA_KEY` en `backend/.env`/`.env.production` de v1 y v2 en el VPS.
+  Sin esa env var, `concertar_cita` sigue funcionando exactamente como antes (solo registro
+  interno) — no rompe nada, simplemente no crea eventos reales hasta que se configure.
+
 ## 6. Actions Engine — motor de acciones del agente
 
 **Mayormente NATIVO desde 2026-07-09** (antes todo pasaba por n8n; se cambió porque v1 y v2 usan
