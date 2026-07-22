@@ -253,6 +253,18 @@ la muestra real revisada). Esto es compartido por web/WhatsApp/Telegram (`chatbo
 `ycloudWebhook.js`, `telegramWebhook.js`); la voz (Retell) usa su propio mecanismo de
 memoria omnicanal (`customerIdentityService.js`, solo v2), no pasa por `loadHistory`.
 
+**Contexto específico por canal — `knowledge_base_voz` (2026-07-22, v1 y v2)**: hasta ahora
+todos los canales compartían un único `chatbot_config.knowledge_base` (solo cambiaban las
+instrucciones de FORMATO por canal, no el contenido). Se añadió un campo opcional
+`chatbot_config.knowledge_base_voz`, editable en el editor del tenant (`ChatbotSidebar.jsx`,
+sección "Contexto para Voz") — si está vacío, la voz sigue usando el `knowledge_base` general
+(sin cambio de comportamiento); si se rellena, `buildPhoneSystemPrompt` en
+`backend/routes/retellWebhook.js` lo usa en su lugar. Web/WhatsApp/Telegram siguen usando
+siempre el `knowledge_base` general (`buildSystemPrompt` en `agentCore.js`, sin cambios). No
+hace falta "regenerar" nada tras editar: `proyecto.chatbot_config` se lee fresco de Supabase
+en cada mensaje/llamada en los 4 canales (sin caché en memoria), así que el cambio se aplica
+solo con guardar desde el editor.
+
 **Streaming en voz (solo Retell, no afecta a web/WhatsApp/Telegram):** `runAgentLoop` acepta
 `hooks.onDelta` (token a token, recorta el tiempo hasta la primera sílaba) y `hooks.onToolStart`
 (dispara una muletilla — "Un momento, estoy localizando tu petición" — al empezar a ejecutar
