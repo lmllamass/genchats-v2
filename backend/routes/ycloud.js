@@ -3,63 +3,70 @@ import { supabase } from '../server.js';
 
 const router = express.Router();
 
-// POST /api/ycloud-config/registrar-webhook
+// POST /api/ycloud-config/registrar-webhook — { proyecto_id? }
+// Si proyecto_id viene informado Y el proyecto tiene su PROPIA cuenta YCloud (ycloud_api_key
+// propia, distinta de la plataforma), el webhook se registra en ESA cuenta — cada WABA/cuenta
+// de YCloud tiene sus propios webhooks, así que registrarlo con la key equivocada no sirve de
+// nada (el mensaje entrante nunca llega a nuestro backend). Si el proyecto no tiene cuenta
+// propia, se usa la global de config_plataforma como hasta ahora.
 router.post('/registrar-webhook', async (req, res) => {
   try {
-    const { data: cfg } = await supabase.from('config_plataforma').select('ycloud_api_key, ycloud_webhook_id').eq('clave', 'plataforma').single();
-    if (!cfg?.ycloud_api_key) return res.status(400).json({ error: 'YCloud API key not configured' });
+    const { proyecto_id } = req.body || {};
+    let apiKey = null;
+    let isProjectOwn = false;
+
+    if (proyecto_id) {
+      const { data: proyecto } = await supabase
+        .from('proyectos').select('ycloud_api_key').eq('id', proyecto_id).single();
+      if (proyecto?.ycloud_api_key) {
+        apiKey = proyecto.ycloud_api_key;
+        isProjectOwn = true;
+      }
+    }
+    if (!apiKey) {
+      const { data: cfg } = await supabase.from('config_plataforma').select('ycloud_api_key').eq('clave', 'plataforma').single();
+      apiKey = cfg?.ycloud_api_key;
+    }
+    if (!apiKey) return res.status(400).json({ error: 'YCloud API key not configured' });
 
     // Siempre usar el dominio real — nunca la IP hardcodeada
     const apiUrl = process.env.API_PUBLIC_URL || 'https://api-v2.genchats.app';
     const webhookUrl = `${apiUrl}/api/ycloud/webhook`;
+    const headers = { 'X-API-Key': apiKey, 'Content-Type': 'application/json' };
 
-    // Si ya hay un webhook registrado, verificamos que la URL en YCloud coincide
-    // Si no coincide (URL antigua, IP, etc.) lo actualizamos
-    if (cfg.ycloud_webhook_id) {
-      try {
-        const checkRes = await fetch(`https://api.ycloud.com/v2/webhookEndpoints/${cfg.ycloud_webhook_id}`, {
-          headers: { 'X-API-Key': cfg.ycloud_api_key }
-        });
-        if (checkRes.ok) {
-          const existing = await checkRes.json();
-          if (existing.url === webhookUrl) {
-            // URL correcta, nada que hacer
-            return res.json({ ok: true, status: 'ya_existia', webhook_id: cfg.ycloud_webhook_id, webhook_url: webhookUrl });
-          }
-          // URL incorrecta (antigua IP u otro dominio) → actualizamos
-          const patchRes = await fetch(`https://api.ycloud.com/v2/webhookEndpoints/${cfg.ycloud_webhook_id}`, {
-            method: 'PATCH',
-            headers: { 'X-API-Key': cfg.ycloud_api_key, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: webhookUrl })
-          });
-          if (patchRes.ok) {
-            await supabase.from('config_plataforma').update({ ycloud_webhook_url: webhookUrl }).eq('clave', 'plataforma');
-            return res.json({ ok: true, status: 'actualizado', webhook_id: cfg.ycloud_webhook_id, webhook_url: webhookUrl });
-          }
-        }
-      } catch (_) { /* si falla el check, creamos uno nuevo */ }
+    // Listamos los webhooks YA existentes en ESTA cuenta (propia del proyecto o global) —
+    // evita duplicados y no depende de guardar un ID por proyecto en ningún sitio.
+    const listRes = await fetch('https://api.ycloud.com/v2/webhookEndpoints', { headers });
+    if (listRes.ok) {
+      const list = await listRes.json();
+      const existing = (list.items || []).find(w => w.url === webhookUrl);
+      if (existing) {
+        return res.json({ ok: true, status: 'ya_existia', webhook_id: existing.id, webhook_url: webhookUrl, cuenta: isProjectOwn ? 'proyecto' : 'global' });
+      }
     }
 
-    // Crear webhook nuevo
+    // Crear webhook nuevo en esta cuenta
     const response = await fetch('https://api.ycloud.com/v2/webhookEndpoints', {
       method: 'POST',
-      headers: { 'X-API-Key': cfg.ycloud_api_key, 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         url: webhookUrl,
         description: 'genchats webhook',
-        events: ['whatsapp.inbound_message.received', 'whatsapp.message.updated']
+        enabledEvents: ['whatsapp.inbound_message.received', 'whatsapp.message.updated']
       })
     });
 
     const data = await response.json();
     if (!response.ok) return res.status(400).json({ error: data.message || 'YCloud error' });
 
-    await supabase.from('config_plataforma').update({
-      ycloud_webhook_id: data.id,
-      ycloud_webhook_url: webhookUrl
-    }).eq('clave', 'plataforma');
+    if (!isProjectOwn) {
+      await supabase.from('config_plataforma').update({
+        ycloud_webhook_id: data.id,
+        ycloud_webhook_url: webhookUrl
+      }).eq('clave', 'plataforma');
+    }
 
-    res.json({ ok: true, status: 'creado', webhook_id: data.id, webhook_url: webhookUrl });
+    res.json({ ok: true, status: 'creado', webhook_id: data.id, webhook_url: webhookUrl, cuenta: isProjectOwn ? 'proyecto' : 'global' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

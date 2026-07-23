@@ -294,6 +294,24 @@ cumplía en la práctica y la muletilla no sonaba — bug corregido 2026-07-09).
 - Notas de voz: se transcriben con Whisper (`downloadAndTranscribe`) antes de pasar al agente.
 - Inbox: `human_takeover` por conversación + `modo_atencion` (`bot`/`humano`).
 
+**⚠️ Registro de webhook por proyecto con cuenta YCloud propia — bug corregido (2026-07-23,
+v1 y v2)**: cada cuenta/WABA de YCloud tiene SUS PROPIOS webhooks — registrar el webhook con
+la API key equivocada no da ningún error, simplemente el mensaje entrante nunca llega a
+nuestro backend (número "no responde" sin ninguna pista en logs, porque el request nunca
+sale de YCloud). El botón "Registrar webhook" del admin (`WhatsAppProjectSection.jsx`) ya
+mandaba `proyecto_id` cuando el proyecto tenía `ycloud_api_key` propia, pero el backend
+(`POST /api/ycloud-config/registrar-webhook`) **lo ignoraba por completo** y siempre usaba la
+key global de `config_plataforma` (que resulta ser la de Suministros Aguado) — detectado con
+"Test GenChats V2" (WABA propia `1021257000801010`, número `+34919932159`): tenía **0
+webhooks registrados** en su propia cuenta. Corregido: si `proyecto_id` viene informado y el
+proyecto tiene `ycloud_api_key` propia, se registra en ESA cuenta (se lista antes de crear,
+para no duplicar — no hace falta guardar el webhook_id en ningún sitio nuevo). De paso se
+corrigió otro bug preexistente nunca antes ejercitado en la creación de un webhook nuevo: el
+payload usaba `events: [...]`, pero la API de YCloud espera `enabledEvents: [...]` (con
+`events` da `400 PARAM_INVALID`) — por eso el webhook global tampoco se podría haber
+re-creado desde cero si el original (`ycloud_webhook_id` en `config_plataforma`) se hubiera
+perdido alguna vez.
+
 ### 5.3 Telegram — texto + notas de voz
 `POST /api/telegram/webhook/:proyecto_id` · visitante = `tg_<user_id>`. Igual patrón que WhatsApp.
 
