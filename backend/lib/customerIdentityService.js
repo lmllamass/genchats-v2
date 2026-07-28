@@ -232,7 +232,16 @@ export async function recordCustomerMessage(supabase, {
   return data;
 }
 
-export async function loadCustomerHistory(supabase, customerId, currentMessage, limit = 30) {
+/**
+ * Historial unificado del cliente entre canales.
+ *
+ * ⚠️ La etiqueta `[canal]` SOLO se pone en mensajes del CLIENTE que vengan de otro
+ * canal distinto al actual — ahí aporta contexto real ("esto me lo escribió por
+ * WhatsApp"). Nunca se etiquetan los mensajes del asistente: al devolvérselos como
+ * propios, el modelo imitaba el formato y acababa escribiéndole "[embed] Hola..."
+ * al cliente. Detectado en producción el 2026-07-28.
+ */
+export async function loadCustomerHistory(supabase, customerId, currentMessage, limit = 30, currentChannel = null) {
   if (!customerId) return [];
   const { data } = await supabase
     .from('customer_messages')
@@ -245,9 +254,10 @@ export async function loadCustomerHistory(supabase, customerId, currentMessage, 
   const messages = [];
   for (const msg of data || []) {
     if (msg.role === 'user' && msg.content === currentMessage && messages.length === (data || []).length - 1) continue;
+    const deOtroCanal = msg.role === 'user' && msg.channel && msg.channel !== currentChannel;
     messages.push({
       role: msg.role,
-      content: msg.channel ? `[${msg.channel}] ${msg.content}` : msg.content,
+      content: deOtroCanal ? `[${msg.channel}] ${msg.content}` : msg.content,
     });
   }
   return messages.length > 20 ? messages.slice(-20) : messages;

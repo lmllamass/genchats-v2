@@ -185,7 +185,7 @@ router.post('/webhook', async (req, res) => {
     // ── Load history, lead and action tools ──────────────────────────────
     const [legacyHistory, unifiedHistory, existingLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
       loadHistory(proyecto.id, fromNumber, textoCliente),
-      loadCustomerHistory(supabase, customerContext?.customer?.id, textoCliente),
+      loadCustomerHistory(supabase, customerContext?.customer?.id, textoCliente, 30, 'whatsapp'),
       loadExistingLead(proyecto.id, fromNumber),
       loadProjectTools(supabase, proyecto.id),
     ]);

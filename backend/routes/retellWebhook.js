@@ -234,7 +234,7 @@ export function attachRetellWebSocket(server) {
 
         const [existingLead, unifiedHistory, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
           loadExistingLead(projectId, vid),
-          loadCustomerHistory(supabase, customerContext?.customer?.id, messages[messages.length - 1]?.content),
+          loadCustomerHistory(supabase, customerContext?.customer?.id, messages[messages.length - 1]?.content, 30, 'phone'),
           loadProjectTools(supabase, projectId),
         ]);
         const ecommerce = proyecto.ecommerce_config;

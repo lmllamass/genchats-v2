@@ -469,6 +469,7 @@ export async function executeTool(toolName, toolInput, toolContext) {
     }
 
     case 'consultar_disponibilidad': {
+      console.log(`[reservas] consultar_disponibilidad ${proyecto.id}`, JSON.stringify(toolInput));
       const res = await resolverRecurso(proyecto.id, toolInput.recurso);
       if (res.error === 'sin_recursos') {
         return 'Este negocio todavía no tiene configuradas sedes ni horarios reservables.';
@@ -496,6 +497,7 @@ export async function executeTool(toolName, toolInput, toolContext) {
     }
 
     case 'reservar_plaza': {
+      console.log(`[reservas] reservar_plaza ${proyecto.id}`, JSON.stringify(toolInput));
       const { fecha, hora } = toolInput;
       if (!fecha || !hora) return 'Necesito fecha y hora exactas para poder reservar.';
 
@@ -586,6 +588,7 @@ export async function executeTool(toolName, toolInput, toolContext) {
     }
 
     case 'gestionar_reserva': {
+      console.log(`[reservas] gestionar_reserva ${proyecto.id}`, JSON.stringify(toolInput));
       const op = toolInput.operacion;
       const codigo = toolInput.codigo ? String(toolInput.codigo).trim().toUpperCase() : null;
       const telefono = toolInput.telefono || callerPhone || existingLead?.telefono || null;

@@ -86,7 +86,7 @@ router.post('/respond', async (req, res) => {
     // Load history, lead and enabled action tools
     const [legacyHistory, unifiedHistory, existingLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([
       loadHistory(proyecto_id, vid, message),
-      loadCustomerHistory(supabase, customerContext?.customer?.id, message),
+      loadCustomerHistory(supabase, customerContext?.customer?.id, message, 30, canal),
       loadExistingLead(proyecto_id, vid),
       loadProjectTools(supabase, proyecto_id),
     ]);
