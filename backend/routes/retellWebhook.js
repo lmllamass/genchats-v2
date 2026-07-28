@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import { supabase } from '../server.js';
 import {
   buildTools,
+  buildReservasNote,
   runAgentLoop,
   loadExistingLead,
   createAnthropicClient,
@@ -26,7 +27,7 @@ const FILLERS = [
   'Ahora mismo lo miro.',
 ];
 
-function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone = null) {
+function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone = null, enabledTools = []) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
@@ -82,7 +83,7 @@ CONTACTO (compártelo sólo si el cliente lo pide):
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
-${ecommerceNote}${leadContext}${whatsappNote}${bookingNote}${buildCustomerMemoryPrompt(customerContext)}`;
+${ecommerceNote}${leadContext}${whatsappNote}${bookingNote}${buildReservasNote(enabledTools)}${buildCustomerMemoryPrompt(customerContext)}`;
 }
 
 function transcriptToMessages(transcript) {
@@ -244,7 +245,7 @@ export function attachRetellWebSocket(server) {
         const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp'])];
 
         const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools);
-        const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone);
+        const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone, enabledTools);
         // Retell nos da la transcripción COMPLETA de esta llamada en cada turno (gratis, en vivo) —
         // nunca hay que descartarla. `unifiedHistory` solo aporta valor para contexto de OTROS
         // canales/llamadas anteriores; sus propias entradas de esta misma llamada ('[phone] ...',

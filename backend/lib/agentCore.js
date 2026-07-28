@@ -969,7 +969,28 @@ export async function runAgentLoop(anthropic, { system, tools, messages }, toolC
  * @param {object|null} existingLead - Lead row for this visitor (or null)
  * @param {'web'|'whatsapp'|'telegram'} canal
  */
-export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web', customerContext = null) {
+/**
+ * Instrucciones de reservas. Se inyectan SOLO si el proyecto tiene activas las tools
+ * del motor de reservas, igual que ecommerceNote con la tienda.
+ *
+ * El punto crítico es la primera regla: sin ella el modelo llegaba a responder
+ * "tu reserva ha sido cancelada" SIN haber llamado nunca a la herramienta —
+ * alucinaba la confirmación. Detectado en pruebas el 2026-07-28.
+ */
+export function buildReservasNote(enabledTools = []) {
+  const tiene = t => enabledTools.includes(t);
+  if (!tiene('consultar_disponibilidad') && !tiene('reservar_plaza') && !tiene('gestionar_reserva')) return '';
+
+  const lineas = ['\n\nRESERVAS — REGLAS ESTRICTAS:',
+    '- NUNCA digas que una reserva está hecha, cambiada o cancelada si no has llamado a la herramienta correspondiente y te ha devuelto confirmación. No lo des por hecho ni lo supongas: si no llamas a la herramienta, NO ha pasado nada en el sistema.',
+    '- No inventes disponibilidad, horarios ni códigos de reserva.'];
+  if (tiene('consultar_disponibilidad')) lineas.push('- Para ver huecos libres usa consultar_disponibilidad. Ofrece solo lo que devuelva.');
+  if (tiene('reservar_plaza'))           lineas.push('- Para crear una reserva usa reservar_plaza, solo después de que el cliente haya elegido fecha y hora concretas. Dale siempre el código que devuelve.');
+  if (tiene('gestionar_reserva'))        lineas.push('- Para consultar, cambiar o CANCELAR una reserva existente usa gestionar_reserva con la operación correspondiente. Si el cliente no recuerda el código, la herramienta la busca por su teléfono.');
+  return lineas.join('\n');
+}
+
+export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web', customerContext = null, enabledTools = []) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
@@ -1038,7 +1059,7 @@ ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
 
-${formatInstructions}${ecommerceNote}${leadContext}${omnichannelContext}`;
+${formatInstructions}${ecommerceNote}${buildReservasNote(enabledTools)}${leadContext}${omnichannelContext}`;
 }
 
 // ── WhatsApp text formatter ────────────────────────────────────────────────

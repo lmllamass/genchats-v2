@@ -201,7 +201,7 @@ router.post('/webhook', async (req, res) => {
     const ecommerce = proyecto.ecommerce_config;
     const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
-    const systemPrompt = buildSystemPrompt(proyecto, config, leadWithPhone, 'whatsapp', customerContext);
+    const systemPrompt = buildSystemPrompt(proyecto, config, leadWithPhone, 'whatsapp', customerContext, actionTools);
     const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools);
     const toolContext = {
       proyecto,
