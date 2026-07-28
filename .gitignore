@@ -20,9 +20,9 @@ dist-ssr
 *.local
 
 # Editor directories and files
-.claude
-.claude/
-**/.claude/
+# .claude ignorado salvo las skills versionadas (.claude/skills)
+.claude/*
+!.claude/skills/
 .vscode/*
 !.vscode/extensions.json
 .idea
