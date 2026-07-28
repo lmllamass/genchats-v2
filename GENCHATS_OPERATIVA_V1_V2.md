@@ -51,6 +51,22 @@ desplegar, verificar en vivo tras cada cambio, y mantener este documento al día
 - **Latencia y memoria del agente de voz — 2 bugs corregidos, solo en v2 (2026-07-10)**: saludo
   antes de resolver identidad (592ms→248ms) + combinar transcripción completa de la llamada con
   memoria omnicanal. No se portea a v1 (código congelado, ver arriba) — ver §5.4.
+- **Motor de reservas con aforo — nativo y en producción (2026-07-28)**: recursos + franjas +
+  unidades, atomicidad por advisory lock (probado con 10 reservas simultáneas sin sobreventa),
+  crear/modificar/cancelar por conversación en cualquier canal. Ver §6.1.
+- **Dos bugs del agente detectados y corregidos el 2026-07-28, ambos se auto-reforzaban:**
+  1. `loadCustomerHistory` etiquetaba con `[canal]` **también los mensajes del asistente**; al
+     devolvérselos como historial propio, el modelo imitaba el formato y le escribía
+     "[embed] Hola..." al cliente final. Ahora solo se etiquetan mensajes del CLIENTE de otro canal.
+  2. Sin instrucciones de reservas en el system prompt, el modelo respondía "tu reserva ha sido
+     cancelada" **sin llamar a la herramienta**. Y como esa respuesta falsa se guarda en
+     `customer_messages`, en la siguiente conversación leía su propia mentira y la repetía →
+     la alucinación se perpetuaba sola. Se añadió `buildReservasNote()` (inyectada en web,
+     WhatsApp, Telegram y voz) con la regla explícita de no dar por hecha ninguna operación sin
+     confirmación de la tool. **Lección: una alucinación persistida contamina el historial; al
+     depurar, revisa `customer_messages` antes de culpar al prompt.**
+- **Export CSV** (`GET /api/export/leads|conversaciones|reservas`): BOM UTF-8, separador `;` y
+  neutralización de fórmulas — los tres detalles que rompen el CSV en un Excel español.
 - **La BD de v1 en producción es Supabase Cloud** (`plsxmckjdxepawajjthc.supabase.co`), **NO** el
   Postgres self-hosted del VPS (`demo_supabase-db-1`) — ese contenedor es una copia vieja
   abandonada con datos congelados de mayo/junio. Ver §3.1, es una confusión fácil de repetir.
@@ -473,6 +489,43 @@ BDs distintas, y enrutar por n8n habría requerido routing complejo BD↔proyect
 - **Carga**: `loadProjectTools(supabase, projectId)` → inyectadas en `buildTools(...)` en los 4
   canales, incluida la voz (antes solo usaba `config.enabled_action_tools`, se corrigió).
 - **Admin UI**: `ToolsProjectSection.jsx` en la ficha de proyecto.
+
+### 6.1 Motor de reservas con aforo (2026-07-28, nativo — NO usa n8n)
+
+Motor **genérico** para cualquier vertical, sin personalizar código por cliente. El eje es
+`recurso + franja + unidades`, y una cita no es más que una reserva de aforo 1:
+
+| Vertical | recurso | franja | capacidad | unidades |
+|---|---|---|---|---|
+| Curso | sede | L-V 10:00 | 30 | 1 (alumno) |
+| Restaurante | local | 13:00 / 14:30 / 21:00 | 40 | N (comensales) |
+| Cita | profesional | hueco | 1 | 1 |
+
+- **Esquema** (migración `010_reservas_engine.sql`): `reservas_recursos`, `reservas_franjas`
+  (plantilla semanal: sin fila ahí no hay nada reservable), `reservas_cierres` (festivos y
+  excepciones) y `reservas`.
+- **Toda la aritmética de aforo vive en RPC de Postgres**, no en el backend:
+  `reservas_disponibilidad`, `reservas_crear`, `reservas_modificar`, `reservas_cancelar`,
+  `reservas_buscar`.
+- **Atomicidad real con `pg_advisory_xact_lock` por franja.** Un `SELECT ... FOR UPDATE` no vale:
+  el problema son las filas que aún no existen (phantom read). Verificado en producción lanzando
+  **10 reservas simultáneas de 2 plazas sobre 14 libres → 7 confirmadas, 3 rechazadas, aforo
+  cerrado en 20/20 sin desbordarse.** Con Google Sheets esto habría sobrevendido: es la razón por
+  la que el motor es nativo y no un flujo de n8n.
+- **Modificar bloquea las DOS franjas en orden determinista** (por hash) para evitar deadlocks
+  entre cambios cruzados A→B / B→A, y descuenta las unidades propias si la reserva se queda en la
+  misma franja.
+- **Tools**: `consultar_disponibilidad`, `reservar_plaza`, `gestionar_reserva`
+  (`consultar|modificar|cancelar`). `gestionar_reserva` localiza la reserva por **teléfono o
+  `customer_id`** aprovechando la identidad omnicanal de v2 — el cliente llama y no necesita
+  recordar el código.
+- **Google Calendar**: se crea/actualiza/borra el evento del recurso (`calendar_id`). Se añadieron
+  `updateCalendarEvent` y `deleteCalendarEvent` a `googleCalendar.js`; sin ellas, cancelar dejaba
+  un evento fantasma. Si Calendar falla, **la reserva sigue siendo válida** — nunca se revierte.
+- **Zona horaria**: el ISO del evento se construye con el desfase real de `Europe/Madrid` para esa
+  fecha (`isoConZona`). Sin eso, "13:00" se guardaba como hora del servidor (UTC) y el evento caía
+  2 h desplazado en verano.
+- Códigos de reserva sin caracteres confundibles (fuera `0/O/1/I/B/8`) porque se dictan por teléfono.
 
 ---
 
