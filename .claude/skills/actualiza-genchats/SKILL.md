@@ -63,10 +63,14 @@ rsync -rl --size-only --delete \
   --exclude .git --exclude .claude --exclude genchats-v2 --exclude 'node_modules*' \
   --exclude dist --exclude backups --exclude '.env*' --exclude CLAUDE.md \
   --exclude '*.log' --exclude GENCHATS_OPERATIVA_V1_V2.md --exclude .DS_Store \
+  --exclude scripts/deploy.sh \
   ./ ../
 
-# 2. Deps del frontend v1 (package.json cambió) y deploy con el deployer canónico de v1
-cd .. && npm ci --no-audit --no-fund
+# 2. Deps del frontend v1 y deploy con el deployer canónico de v1.
+#    npm install, NUNCA npm ci: ci borra node_modules y DESTRUYE el symlink .nosync
+#    (y aun así npm install puede cargárselo — verificar y recolocar después, ver Gotchas)
+cd .. && npm install --no-audit --no-fund
+ls -la node_modules | head -1   # si ya no es symlink → mv node_modules node_modules.nosync + ln -s
 ./scripts/deploy.sh backend     # backup en VPS + node --check + npm install si toca + pm2 restart + health
 ./scripts/deploy.sh frontend    # npm run build (usa .env.production de v1 → BD y API de v1) + docker cp + nginx reload
 ```
@@ -99,10 +103,30 @@ v1 `git checkout <commit-anterior> && ./scripts/deploy.sh frontend`.
 
 ## Gotchas
 
+- **☠️ `--exclude scripts/deploy.sh` en el rsync es OBLIGATORIO** (aprendido el 2026-07-28 en
+  la primera promoción): sin él, el `deploy.sh` de v2 (resto solo-frontend que ignora el
+  argumento `backend`) PISA el deployer canónico de v1 — el "deploy backend" desplegó el
+  frontend y dejó producción mixta (front v2 + API vieja) hasta restaurarlo con
+  `git checkout -- scripts/deploy.sh` en el repo v1 y repetir el deploy.
 - **☠️ NO ejecutar `genchats-v2/scripts/deploy.sh`** (el de ESTE repo): es un resto de la copia
   que apunta al contenedor de **v1** (`demo_genchats-frontend`) — lanzarlo despliega la build de
   v2 (con envs de v2 → BD de v2) sobre genchats.app, exactamente el desastre que esta skill
   evita. El deploy correcto es SIEMPRE `../scripts/deploy.sh` desde el repo v1, tras el rsync.
+- **npm ci/install destruyen el symlink `node_modules → node_modules.nosync`** (npm borra el
+  symlink y crea un dir real dentro de iCloud → futura eviction). Tras CUALQUIER npm
+  install/ci en raíz o backend de cualquiera de los dos repos: verificar con
+  `ls -la | grep node_modules` y recolocar (`mv node_modules node_modules.nosync` — apartando
+  antes el nosync viejo — `+ ln -s`).
+- **Antes de `git add -A` en el repo v1, asegurar que `.gitignore` cubre `node_modules*`**
+  (todas las variantes: `.nosync`, `.old-*`, `node_modules 2`). El 2026-07-28 un add sin eso
+  metió 28.075 ficheros de node_modules en el índice: git quedó lentísimo (objetos sueltos en
+  `.git/objects` + iCloud sincronizándolos), con index.lock huérfanos. Recuperación: apartar
+  `index.lock` (mv, no rm), `git read-tree HEAD` (resetea índice sin tocar disco) y re-add.
+- **El aviso de claves .env de la auditoría es informativo, no bloqueante**: comparar SIEMPRE
+  contra el env real del contenedor v2 (`docker exec genchats-v2-api env`) — el 2026-07-28 las
+  4 "faltantes" (`GOOGLE_CALENDAR_SA_KEY`, `N8N_WEBHOOK_TOKEN`, `ADMIN_*`) tampoco existían en
+  v2 producción (las ADMIN_* tienen fallback `info@konkabeza.es` en código) → paridad = no-op.
+  `GOOGLE_CALENDAR_SA_KEY` sigue pendiente EN AMBAS producciones (Calendar inactivo).
 - **`genchats-v2/` vive DENTRO del repo v1.** Sin `--exclude genchats-v2` el rsync se copia a sí
   mismo dentro de sí mismo. Es la exclusión más importante de la lista.
 - **La BD de producción v1 es Supabase CLOUD** (`plsxmck…`), no el contenedor

@@ -30,10 +30,9 @@ echo
 echo "── 2. Ficheros que cambiarían al copiar v2 → repo v1 (rsync dry-run) ──"
 # OJO: sin -c (checksum): en iCloud leería todo el árbol y dispara descargas de evictados.
 rsync -rln --size-only --delete --out-format='%o %n' \
-  --exclude .git --exclude .claude --exclude genchats-v2 --exclude node_modules \
-  --exclude node_modules.nosync --exclude 'node_modules*' --exclude dist \
-  --exclude backups --exclude '.env*' --exclude CLAUDE.md --exclude '*.log' \
-  --exclude GENCHATS_OPERATIVA_V1_V2.md --exclude .DS_Store \
+  --exclude .git --exclude .claude --exclude genchats-v2 --exclude 'node_modules*' \
+  --exclude dist --exclude backups --exclude '.env*' --exclude CLAUDE.md --exclude '*.log' \
+  --exclude GENCHATS_OPERATIVA_V1_V2.md --exclude .DS_Store --exclude scripts/deploy.sh \
   "$V2_DIR/" "$V1_DIR/" 2>/dev/null > /tmp/actualiza-genchats-diff.txt
 # rsync local-a-local etiqueta las copias como 'recv' (no 'send')
 n_send=$(grep -cE '^(send|recv)' /tmp/actualiza-genchats-diff.txt || true)
