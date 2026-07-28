@@ -9,7 +9,7 @@ import { supabase } from '../server.js';
 import { queryEcommerce, formatProducts } from './ecommerceConnectors.js';
 import { callActionWebhook } from './actionsService.js';
 import { buildCustomerMemoryPrompt, updateCustomerFromContact } from './customerIdentityService.js';
-import { isSlotFree, createCalendarEvent } from './googleCalendar.js';
+import { isSlotFree, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from './googleCalendar.js';
 
 // ── Fecha/hora actual, para que el modelo calcule fechas relativas ("mañana", "el lunes") ──
 export function currentDateTimeLine() {
@@ -94,6 +94,55 @@ const ACTION_TOOL_DEFS = {
         datos:   { type: 'object', description: 'Datos necesarios para la acción' },
       },
       required: [],
+    },
+  },
+  consultar_disponibilidad: {
+    name: 'consultar_disponibilidad',
+    description: 'Consulta huecos libres para reservar (plazas de un curso, mesas de un restaurante, citas...). Úsalo SIEMPRE antes de reservar, para poder ofrecer opciones reales al cliente. Nunca inventes disponibilidad.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        recurso:  { type: 'string', description: 'Nombre de la sede, local o sala. Omítelo si el negocio solo tiene uno.' },
+        fecha:    { type: 'string', description: 'Fecha desde la que buscar, formato YYYY-MM-DD. Si el cliente dice "mañana" o "el jueves", calcula tú la fecha exacta.' },
+        unidades: { type: 'number', description: 'Plazas necesarias (ej. nº de comensales de la mesa). Por defecto 1.' },
+      },
+      required: [],
+    },
+  },
+  reservar_plaza: {
+    name: 'reservar_plaza',
+    description: 'Confirma una reserva en una fecha y hora concretas. Úsalo SOLO después de consultar_disponibilidad y de que el cliente haya elegido. Devuelve un código de reserva que debes darle.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fecha:     { type: 'string', description: 'Fecha de la reserva, formato YYYY-MM-DD.' },
+        hora:      { type: 'string', description: 'Hora exacta de la franja elegida, formato HH:MM (una de las que devolvió consultar_disponibilidad).' },
+        recurso:   { type: 'string', description: 'Sede/local elegido. Omítelo si solo hay uno.' },
+        unidades:  { type: 'number', description: 'Plazas a reservar (comensales, alumnos...). Por defecto 1.' },
+        nombre:    { type: 'string', description: 'Nombre del cliente.' },
+        telefono:  { type: 'string', description: 'Teléfono de contacto. En llamadas, si no lo dice, se usa el suyo automáticamente.' },
+        email:     { type: 'string', description: 'Email (opcional).' },
+        documento: { type: 'string', description: 'DNI u otro documento, si el negocio lo pide.' },
+        notas:     { type: 'string', description: 'Peticiones especiales (alergias, silla de bebé, accesibilidad...).' },
+      },
+      required: ['fecha', 'hora'],
+    },
+  },
+  gestionar_reserva: {
+    name: 'gestionar_reserva',
+    description: 'Consulta, cambia o cancela una reserva que el cliente YA tiene. Si no te da el código, se busca automáticamente por su teléfono.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        operacion:       { type: 'string', enum: ['consultar', 'modificar', 'cancelar'], description: 'Qué quiere hacer el cliente.' },
+        codigo:          { type: 'string', description: 'Código de la reserva, si el cliente lo tiene a mano.' },
+        nueva_fecha:     { type: 'string', description: 'Solo para modificar: nueva fecha YYYY-MM-DD.' },
+        nueva_hora:      { type: 'string', description: 'Solo para modificar: nueva hora HH:MM.' },
+        nuevo_recurso:   { type: 'string', description: 'Solo para modificar: nueva sede/local.' },
+        nuevas_unidades: { type: 'number', description: 'Solo para modificar: nuevo nº de plazas/comensales.' },
+        motivo:          { type: 'string', description: 'Solo para cancelar: motivo, si lo dice.' },
+      },
+      required: ['operacion'],
     },
   },
   enviar_whatsapp: {
@@ -205,6 +254,87 @@ async function notifyOwnerAccion(config, proyecto, canal, titulo, campos) {
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
+// ── Motor de reservas — helpers ────────────────────────────────────────────
+// El aforo y la atomicidad viven en las RPC de Postgres (migración 010).
+// Aquí solo traducimos entre el lenguaje del agente (nombres, "mañana") y la BD.
+
+const RESERVAS_TZ = 'Europe/Madrid';
+
+const normalizar = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+/**
+ * Construye un ISO con el desfase horario REAL de esa fecha en España.
+ * Sin esto, "13:00" se interpretaría como hora del servidor (UTC) y el evento
+ * de Calendar caería 2 h desplazado en verano.
+ */
+function isoConZona(fecha, hora, tz = RESERVAS_TZ) {
+  const hhmm = String(hora).slice(0, 5);
+  const sonda = new Date(`${fecha}T12:00:00Z`);
+  const etiqueta = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' }).format(sonda);
+  const desfase = etiqueta.match(/GMT([+-]\d{2}:\d{2})/)?.[1] || '+00:00';
+  return `${fecha}T${hhmm}:00${desfase}`;
+}
+
+function fechaLegible(fecha) {
+  const d = new Date(`${fecha}T12:00:00Z`);
+  return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: RESERVAS_TZ });
+}
+
+/** Resuelve el nombre que dice el cliente ("centro", "la de Gran Vía") al recurso real. */
+async function resolverRecurso(proyectoId, nombre) {
+  const { data } = await supabase
+    .from('reservas_recursos')
+    .select('id, nombre, direccion, maps_url, calendar_id')
+    .eq('proyecto_id', proyectoId)
+    .eq('activo', true);
+
+  if (!data?.length) return { error: 'sin_recursos' };
+  // Si el negocio solo tiene un sitio, no hace falta que el cliente lo nombre.
+  if (!nombre) return data.length === 1 ? { recurso: data[0] } : { error: 'ambiguo', opciones: data };
+
+  const n = normalizar(nombre);
+  const exacto = data.find(r => normalizar(r.nombre) === n);
+  if (exacto) return { recurso: exacto };
+  const parcial = data.filter(r => normalizar(r.nombre).includes(n) || n.includes(normalizar(r.nombre)));
+  if (parcial.length === 1) return { recurso: parcial[0] };
+  return { error: 'ambiguo', opciones: parcial.length ? parcial : data };
+}
+
+/** Duración de la franja, para dimensionar el evento de calendario. */
+async function duracionFranja(recursoId, fecha, hora) {
+  const diaSemana = ((new Date(`${fecha}T12:00:00Z`).getUTCDay() + 6) % 7) + 1; // ISO 1=lunes
+  const { data } = await supabase
+    .from('reservas_franjas')
+    .select('duracion_min')
+    .eq('recurso_id', recursoId)
+    .eq('dia_semana', diaSemana)
+    .eq('hora', `${String(hora).slice(0, 5)}:00`)
+    .limit(1);
+  return data?.[0]?.duracion_min || 60;
+}
+
+/** Texto compacto de disponibilidad. Por voz se recortan las opciones: nadie retiene 6 fechas dichas en alto. */
+function formatDisponibilidad(filas, canal) {
+  if (!filas?.length) return null;
+  const maxOpciones = canal === 'phone' ? 3 : 6;
+  const porFecha = new Map();
+  for (const f of filas) {
+    if (!porFecha.has(f.fecha)) porFecha.set(f.fecha, []);
+    porFecha.get(f.fecha).push(f);
+  }
+  const bloques = [];
+  for (const [fecha, items] of porFecha) {
+    if (bloques.length >= maxOpciones) break;
+    const horas = items.slice(0, 4).map(i => {
+      const h = String(i.hora).slice(0, 5);
+      return `${h} (${i.libres} libres)`;
+    });
+    const sede = items[0].recurso;
+    bloques.push(`${fechaLegible(fecha)} en ${sede}: ${horas.join(', ')}`);
+  }
+  return bloques.join(' | ');
+}
+
 export async function executeTool(toolName, toolInput, toolContext) {
   const { proyecto, vid, canal, config, existingLead, customer, toolConfigs, callerPhone } = toolContext;
   switch (toolName) {
@@ -336,6 +466,245 @@ export async function executeTool(toolName, toolInput, toolContext) {
         contact: toolInput,
       });
       return { guardado: true, mensaje: 'Datos de contacto registrados correctamente.' };
+    }
+
+    case 'consultar_disponibilidad': {
+      const res = await resolverRecurso(proyecto.id, toolInput.recurso);
+      if (res.error === 'sin_recursos') {
+        return 'Este negocio todavía no tiene configuradas sedes ni horarios reservables.';
+      }
+      // Si el cliente no ha dicho sede y hay varias, consultamos TODAS: es más útil
+      // ofrecerle opciones que devolverle una pregunta.
+      const recursoId = res.recurso?.id || null;
+
+      const { data, error } = await supabase.rpc('reservas_disponibilidad', {
+        p_proyecto: proyecto.id,
+        p_recurso:  recursoId,
+        p_desde:    toolInput.fecha || null,
+        p_dias:     toolConfigs?.consultar_disponibilidad?.dias_vista || 21,
+        p_unidades: Math.max(1, toolInput.unidades || 1),
+      });
+      if (error) {
+        console.error('[consultar_disponibilidad] error:', error.message);
+        return 'No he podido consultar la disponibilidad ahora mismo.';
+      }
+
+      const texto = formatDisponibilidad(data, canal);
+      return texto
+        ? `Huecos libres: ${texto}. Ofrécele estas opciones y espera a que elija.`
+        : 'No quedan huecos libres en las próximas semanas con esos criterios.';
+    }
+
+    case 'reservar_plaza': {
+      const { fecha, hora } = toolInput;
+      if (!fecha || !hora) return 'Necesito fecha y hora exactas para poder reservar.';
+
+      const telefono = toolInput.telefono || callerPhone || existingLead?.telefono || null;
+      if (!telefono) return 'Necesito un teléfono de contacto antes de confirmar la reserva. Pídeselo al cliente.';
+
+      const res = await resolverRecurso(proyecto.id, toolInput.recurso);
+      if (res.error === 'sin_recursos') return 'Este negocio no tiene sedes configuradas para reservar.';
+      if (res.error === 'ambiguo') {
+        return `Falta saber el sitio. Opciones: ${res.opciones.map(o => o.nombre).join(', ')}. Pregúntale al cliente cuál prefiere.`;
+      }
+      const recurso = res.recurso;
+      const unidades = Math.max(1, toolInput.unidades || toolConfigs?.reservar_plaza?.unidades_default || 1);
+
+      const { data, error } = await supabase.rpc('reservas_crear', {
+        p_proyecto:   proyecto.id,
+        p_recurso:    recurso.id,
+        p_fecha:      fecha,
+        p_hora:       String(hora).slice(0, 5),
+        p_nombre:     toolInput.nombre || existingLead?.nombre || null,
+        p_telefono:   telefono,
+        p_unidades:   unidades,
+        p_email:      toolInput.email || existingLead?.email || null,
+        p_documento:  toolInput.documento || null,
+        p_notas:      toolInput.notas || null,
+        p_canal:      canal,
+        p_visitor_id: vid,
+        p_customer:   customer?.id || null,
+      });
+      if (error) {
+        console.error('[reservar_plaza] error:', error.message);
+        return 'No he podido completar la reserva ahora mismo. Ofrécele que le llamemos para confirmarla.';
+      }
+
+      if (!data.ok) {
+        if (data.motivo === 'completo') {
+          const { data: alt } = await supabase.rpc('reservas_disponibilidad', {
+            p_proyecto: proyecto.id, p_recurso: recurso.id, p_desde: fecha, p_dias: 14, p_unidades: unidades,
+          });
+          const texto = formatDisponibilidad(alt, canal);
+          return texto
+            ? `Esa franja está completa (quedan ${data.libres} plazas). Alternativas: ${texto}. Pregúntale cuál le viene mejor.`
+            : 'Esa franja está completa y no encuentro alternativas cercanas. Ofrécele que le avisemos si se libera.';
+        }
+        if (data.motivo === 'franja_inexistente') {
+          return 'No hay servicio a esa hora ese día. Vuelve a consultar disponibilidad y ofrécele una franja válida.';
+        }
+        return 'No he podido completar la reserva. Ofrécele que le llamemos.';
+      }
+
+      if (data.duplicado) {
+        return `El cliente YA tenía esa reserva. Su código es ${data.codigo}. Confírmaselo, no hace falta reservar de nuevo.`;
+      }
+
+      // Calendario: si falla, la reserva sigue siendo válida — nunca revertimos por esto.
+      if (recurso.calendar_id) {
+        try {
+          const dur = await duracionFranja(recurso.id, fecha, hora);
+          const ev = await createCalendarEvent(recurso.calendar_id, {
+            summary: `Reserva ${data.codigo} · ${toolInput.nombre || 'Cliente'}${unidades > 1 ? ` (${unidades})` : ''}`,
+            description: [
+              `Código: ${data.codigo}`,
+              toolInput.nombre ? `Nombre: ${toolInput.nombre}` : null,
+              `Teléfono: ${telefono}`,
+              toolInput.email ? `Email: ${toolInput.email}` : null,
+              `Plazas: ${unidades}`,
+              toolInput.notas ? `Notas: ${toolInput.notas}` : null,
+              `Reservado vía ${canal} con GenChats.`,
+            ].filter(Boolean).join('\n'),
+            startISO: isoConZona(fecha, hora),
+            durationMinutes: dur,
+          });
+          await supabase.from('reservas').update({ calendar_event_id: ev.id }).eq('id', data.reserva_id);
+        } catch (err) {
+          console.error('[reservar_plaza] Google Calendar error:', err.message);
+        }
+      }
+
+      notifyOwnerAccion(config, proyecto, canal, '🗓️ Nueva reserva', {
+        Código: data.codigo, Cliente: toolInput.nombre, Teléfono: telefono,
+        Sitio: recurso.nombre, Fecha: `${fecha} ${String(hora).slice(0, 5)}`,
+        Plazas: unidades, Notas: toolInput.notas,
+      });
+
+      const donde = recurso.direccion ? `${recurso.nombre} (${recurso.direccion})` : recurso.nombre;
+      return `Reserva confirmada. Código ${data.codigo} · ${fechaLegible(fecha)} a las ${String(hora).slice(0, 5)} · ${donde}` +
+             `${unidades > 1 ? ` · ${unidades} plazas` : ''}. Dale el código al cliente, deletreándolo si es una llamada.`;
+    }
+
+    case 'gestionar_reserva': {
+      const op = toolInput.operacion;
+      const codigo = toolInput.codigo ? String(toolInput.codigo).trim().toUpperCase() : null;
+      const telefono = toolInput.telefono || callerPhone || existingLead?.telefono || null;
+
+      if (!codigo && !telefono && !customer?.id) {
+        return 'Necesito el código de la reserva o el teléfono del cliente para localizarla.';
+      }
+
+      const { data: encontradas, error: errBuscar } = await supabase.rpc('reservas_buscar', {
+        p_proyecto: proyecto.id,
+        p_codigo:   codigo,
+        p_telefono: codigo ? null : telefono,
+        p_customer: codigo ? null : (customer?.id || null),
+      });
+      if (errBuscar) {
+        console.error('[gestionar_reserva] buscar:', errBuscar.message);
+        return 'No he podido consultar las reservas ahora mismo.';
+      }
+      if (!encontradas?.length) {
+        return 'No encuentro ninguna reserva activa a nombre de ese cliente. Confirma con él el código o el teléfono con el que reservó.';
+      }
+
+      const describir = r =>
+        `${r.codigo} · ${fechaLegible(r.fecha)} a las ${String(r.hora).slice(0, 5)} · ${r.recurso}` +
+        `${r.unidades > 1 ? ` · ${r.unidades} plazas` : ''}`;
+
+      if (op === 'consultar') {
+        return encontradas.length === 1
+          ? `Su reserva: ${describir(encontradas[0])}.`
+          : `Tiene ${encontradas.length} reservas: ${encontradas.map(describir).join(' | ')}.`;
+      }
+
+      if (encontradas.length > 1) {
+        return `Tiene varias reservas: ${encontradas.map(describir).join(' | ')}. Pregúntale cuál quiere ${op === 'cancelar' ? 'cancelar' : 'cambiar'}.`;
+      }
+      const reserva = encontradas[0];
+
+      if (op === 'cancelar') {
+        const { data, error } = await supabase.rpc('reservas_cancelar', {
+          p_proyecto: proyecto.id, p_codigo: reserva.codigo, p_motivo: toolInput.motivo || null,
+        });
+        if (error || !data?.ok) {
+          console.error('[gestionar_reserva] cancelar:', error?.message || data?.motivo);
+          return 'No he podido cancelar la reserva ahora mismo.';
+        }
+
+        if (data.calendar_event_id) {
+          try {
+            const { data: fila } = await supabase.from('reservas')
+              .select('reservas_recursos(calendar_id)')
+              .eq('proyecto_id', proyecto.id).eq('codigo', reserva.codigo).single();
+            const calId = fila?.reservas_recursos?.calendar_id;
+            if (calId) await deleteCalendarEvent(calId, data.calendar_event_id);
+          } catch (err) {
+            console.error('[gestionar_reserva] borrar evento:', err.message);
+          }
+        }
+
+        notifyOwnerAccion(config, proyecto, canal, '❌ Reserva cancelada', {
+          Código: reserva.codigo, Cliente: reserva.nombre_cliente,
+          Fecha: `${reserva.fecha} ${String(reserva.hora).slice(0, 5)}`, Sitio: reserva.recurso,
+          Motivo: toolInput.motivo,
+          'En lista de espera': data.espera ? `${data.espera.nombre} (${data.espera.telefono})` : 'nadie',
+        });
+
+        return `Reserva ${reserva.codigo} cancelada y la plaza queda libre. Confírmaselo al cliente.`;
+      }
+
+      // modificar
+      const nuevoRecurso = toolInput.nuevo_recurso
+        ? (await resolverRecurso(proyecto.id, toolInput.nuevo_recurso)).recurso
+        : null;
+      if (toolInput.nuevo_recurso && !nuevoRecurso) {
+        return 'No reconozco esa sede. Pregúntale al cliente cuál exactamente.';
+      }
+
+      const { data, error } = await supabase.rpc('reservas_modificar', {
+        p_proyecto:        proyecto.id,
+        p_codigo:          reserva.codigo,
+        p_nuevo_recurso:   nuevoRecurso?.id || null,
+        p_nueva_fecha:     toolInput.nueva_fecha || null,
+        p_nueva_hora:      toolInput.nueva_hora ? String(toolInput.nueva_hora).slice(0, 5) : null,
+        p_nuevas_unidades: toolInput.nuevas_unidades || null,
+      });
+      if (error) {
+        console.error('[gestionar_reserva] modificar:', error.message);
+        return 'No he podido cambiar la reserva ahora mismo.';
+      }
+      if (!data.ok) {
+        if (data.motivo === 'completo') {
+          return `Esa nueva franja está completa (quedan ${data.libres}). Consulta disponibilidad y ofrécele otra.`;
+        }
+        if (data.motivo === 'franja_inexistente') {
+          return 'No hay servicio a esa hora ese día. Consulta disponibilidad y ofrécele una franja válida.';
+        }
+        return 'No he podido cambiar la reserva.';
+      }
+      if (data.sin_cambios) return 'La reserva ya estaba tal cual la pide. No hay nada que cambiar.';
+
+      if (data.calendar_id && data.calendar_event_id) {
+        try {
+          const dur = await duracionFranja(data.recurso_id, data.fecha, data.hora);
+          await updateCalendarEvent(data.calendar_id, data.calendar_event_id, {
+            startISO: isoConZona(data.fecha, data.hora),
+            durationMinutes: dur,
+          });
+        } catch (err) {
+          console.error('[gestionar_reserva] actualizar evento:', err.message);
+        }
+      }
+
+      notifyOwnerAccion(config, proyecto, canal, '✏️ Reserva modificada', {
+        Código: data.codigo, Cliente: reserva.nombre_cliente,
+        Antes: `${reserva.fecha} ${String(reserva.hora).slice(0, 5)} · ${reserva.recurso}`,
+        Ahora: `${data.fecha} ${String(data.hora).slice(0, 5)}`, Plazas: data.unidades,
+      });
+
+      return `Reserva ${data.codigo} cambiada a ${fechaLegible(data.fecha)} a las ${String(data.hora).slice(0, 5)}` +
+             `${data.unidades > 1 ? ` · ${data.unidades} plazas` : ''}. Confírmaselo al cliente.`;
     }
 
     case 'enviar_whatsapp': {

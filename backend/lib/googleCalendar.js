@@ -113,3 +113,38 @@ export async function createCalendarEvent(calendarId, { summary, description, st
   });
   return res.data;
 }
+
+// Mueve/actualiza un evento existente (cambio de fecha, hora o datos de la reserva).
+// Sólo se envían los campos indicados — usa PATCH, no PUT, para no borrar lo que no tocamos.
+export async function updateCalendarEvent(calendarId, eventId, { summary, description, startISO, durationMinutes = 30 } = {}) {
+  if (!isConfigured()) throw new Error('Google Calendar no está configurado en el servidor.');
+  const calendar = google.calendar({ version: 'v3', auth: getAuth() });
+  const body = {};
+  if (summary !== undefined)     body.summary = summary;
+  if (description !== undefined) body.description = description;
+  if (startISO) {
+    const start = new Date(startISO);
+    const end = new Date(start.getTime() + durationMinutes * 60000);
+    body.start = { dateTime: start.toISOString() };
+    body.end   = { dateTime: end.toISOString() };
+  }
+  const res = await calendar.events.patch({
+    calendarId, eventId, sendUpdates: 'none', requestBody: body,
+  });
+  return res.data;
+}
+
+// Borra el evento al cancelar una reserva. Un 404/410 (ya no existe) NO es un error
+// para nosotros: el estado deseado —que no haya evento— ya se cumple.
+export async function deleteCalendarEvent(calendarId, eventId) {
+  if (!isConfigured()) throw new Error('Google Calendar no está configurado en el servidor.');
+  const calendar = google.calendar({ version: 'v3', auth: getAuth() });
+  try {
+    await calendar.events.delete({ calendarId, eventId, sendUpdates: 'none' });
+    return true;
+  } catch (err) {
+    const code = err?.code || err?.response?.status;
+    if (code === 404 || code === 410) return true;
+    throw err;
+  }
+}
