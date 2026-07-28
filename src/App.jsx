@@ -33,6 +33,7 @@ import Privacidad from '@/pages/Privacidad.jsx';
 import Cookies from '@/pages/Cookies.jsx';
 import AvisoLegal from '@/pages/AvisoLegal.jsx';
 import Activacion from '@/pages/Activacion';
+import ConfiguracionInicial from '@/pages/ConfiguracionInicial';
 import Conversaciones from '@/pages/Conversaciones';
 import Leads from '@/pages/Leads';
 import Debug from '@/pages/Debug';
@@ -76,6 +77,7 @@ const AuthenticatedApp = () => {
       <Route path="/privacidad" element={<Privacidad />} />
       <Route path="/cookies" element={<Cookies />} />
       <Route path="/aviso-legal" element={<AvisoLegal />} />
+      <Route path="/configuracion-inicial" element={<ConfiguracionInicial />} />
       <Route path="/debug" element={<Debug />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>

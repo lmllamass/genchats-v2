@@ -75,27 +75,42 @@ router.post('/lead', async (req, res) => {
 // POST /api/notify/pro-activation
 router.post('/pro-activation', async (req, res) => {
   try {
-    const { email, nombre_negocio, proyecto_id } = req.body;
+    const { email, nombre_negocio, proyecto_id, plan } = req.body;
     if (!email) return res.json({ ok: true });
 
     const resend = getResend();
+    const appUrl = process.env.APP_URL || 'https://v2.genchats.app';
+    const esSuperPro = plan === 'super-pro';
+    const nombrePlan = esSuperPro ? 'Super Pro' : 'Pro';
+    const onboardingUrl = `${appUrl}/configuracion-inicial`;
 
     await resend.emails.send({
       from: getFrom(),
       to: email,
-      subject: `🚀 Tu chatbot Pro está activado — ${nombre_negocio}`,
+      subject: `🚀 Tu chatbot ${nombrePlan} está activado — falta un paso para conectar WhatsApp${esSuperPro ? ' y voz' : ''}`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px">
           <div style="background:linear-gradient(135deg,#7c3aed,#2563eb);padding:24px;border-radius:12px;margin-bottom:24px">
-            <h2 style="color:white;margin:0">🎉 ¡Tu chatbot Pro está activado!</h2>
+            <h2 style="color:white;margin:0">🎉 ¡Tu chatbot ${nombrePlan} está activado!</h2>
           </div>
-          <p>El chatbot de <strong>${nombre_negocio}</strong> ya está funcionando en modo Pro.</p>
+          <p>El chatbot de <strong>${nombre_negocio}</strong> ya está funcionando en modo ${nombrePlan}.</p>
           <p>Ahora tienes acceso a:</p>
           <ul style="line-height:2">
-            <li>✅ Chatbot WhatsApp Business ilimitado</li>
+            <li>✅ Web + WhatsApp + Telegram ilimitados</li>
             <li>✅ Captura automática de leads</li>
             <li>✅ Integración con tu catálogo de productos</li>
+            ${esSuperPro ? '<li>✅ Chatbot con voz (llamadas telefónicas)</li>' : ''}
           </ul>
+          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:20px;margin:24px 0">
+            <p style="margin:0 0 8px;font-weight:700;color:#92400e">📋 Falta un paso para dejarlo 100% operativo</p>
+            <p style="margin:0 0 14px;color:#78350f;font-size:14px;line-height:1.6">
+              Para conectar WhatsApp${esSuperPro ? ' y el agente de voz' : ''} necesitamos que abras un par de cuentas
+              (gratuitas) en nuestros proveedores. Te hemos preparado una guía paso a paso con enlaces directos:
+            </p>
+            <a href="${onboardingUrl}" style="display:inline-block;background:#7c3aed;color:white;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:14px">
+              Ver guía de configuración →
+            </a>
+          </div>
           <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
           <p style="color:#9ca3af;font-size:12px">GenChat IA — genchats.app</p>
         </div>
