@@ -178,4 +178,43 @@ export const api = {
     apiFetchAuth('/api/whatsapp-templates', { method: 'POST', body: JSON.stringify(data) }),
   deleteWhatsAppTemplate: (proyectoId, name, language) =>
     apiFetchAuth(`/api/whatsapp-templates/${encodeURIComponent(name)}?proyecto_id=${proyectoId}${language ? `&language=${language}` : ''}`, { method: 'DELETE' }),
+
+  // Exportación a CSV — descarga un fichero, no JSON, así que no puede usar apiFetchAuth.
+  exportarCsv: (tipo, proyectoId, filtros = {}) =>
+    descargarCsv(tipo, proyectoId, filtros),
 };
+
+/**
+ * Descarga un CSV del backend respetando la autenticación.
+ * No sirve un <a href> normal: el endpoint exige cabecera Authorization, así que
+ * hay que pedirlo por fetch y disparar la descarga desde el blob resultante.
+ */
+async function descargarCsv(tipo, proyectoId, filtros = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const params = new URLSearchParams({ proyecto_id: proyectoId });
+  for (const [k, v] of Object.entries(filtros)) if (v) params.set(k, v);
+
+  const res = await fetch(`${API_URL}/api/export/${tipo}?${params}`, {
+    headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `No se pudo exportar (HTTP ${res.status})`);
+  }
+
+  // El backend manda el nombre en Content-Disposition; si no llega, componemos uno.
+  const cd = res.headers.get('Content-Disposition') || '';
+  const nombre = cd.match(/filename="?([^"]+)"?/)?.[1]
+    || `${tipo}-${new Date().toISOString().slice(0, 10)}.csv`;
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return nombre;
+}

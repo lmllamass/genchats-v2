@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import moment from "moment";
 import "moment/locale/es";
+import ExportButton from "@/components/ExportButton";
 moment.locale("es");
 
 const CANAL_ICON = { whatsapp: "💬", web: "🌐", telegram: "✈️" };
@@ -104,7 +105,7 @@ export default function ConversacionesPanel({ proyectoId, activeConv, onSelect }
   return (
     <div className="flex flex-col h-full">
       {/* Search */}
-      <div className="p-3 border-b border-border">
+      <div className="p-3 border-b border-border space-y-2">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
@@ -114,6 +115,12 @@ export default function ConversacionesPanel({ proyectoId, activeConv, onSelect }
             className="pl-8 h-8 text-xs bg-secondary/50"
           />
         </div>
+        <ExportButton
+          tipo="conversaciones"
+          proyectoId={proyectoId}
+          className="w-full text-xs h-8"
+          label="Exportar historial a CSV"
+        />
       </div>
 
       {/* List */}

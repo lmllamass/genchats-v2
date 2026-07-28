@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Users, Search, Phone, Mail, Globe, MessageCircle, Send, Loader2,
   ChevronLeft, ChevronRight, Tag, X, Plus, Trash2, BookTemplate, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ExportButton from "@/components/ExportButton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -262,6 +263,19 @@ export default function Leads() {
           <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setShowTemplates(true)}>
             <FileText className="w-3.5 h-3.5 mr-1.5" /> Plantillas WhatsApp
           </Button>
+
+          {/* Export — la exportación es por proyecto, así que exige elegir uno arriba */}
+          <ExportButton
+            tipo="leads"
+            proyectoId={filterProjectId}
+            className="w-full text-xs"
+            label="Exportar leads a CSV"
+          />
+          {!filterProjectId && (
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              Elige un proyecto arriba para poder exportar sus leads.
+            </p>
+          )}
         </div>
       </aside>
 
