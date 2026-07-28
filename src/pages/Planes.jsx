@@ -20,8 +20,9 @@ const PLANS = [
   {
     id: "pro",
     name: "Pro",
-    price: "49€",
-    period: "/mes",
+    price: "79€",
+    period: "/mes + IVA",
+    setup: "490€ de instalación y puesta en marcha (pago único)",
     desc: "Para negocios que quieren vender más",
     features: ["Web + WhatsApp + Telegram", "Conversaciones ilimitadas", "3 proyectos", "CRM de leads incluido", "Detección ecommerce", "Soporte email prioritario"],
     gradient: "from-orange-500 to-amber-500",
@@ -30,8 +31,9 @@ const PLANS = [
   {
     id: "super-pro",
     name: "Super Pro",
-    price: "99€",
-    period: "/mes",
+    price: "149€",
+    period: "/mes + IVA",
+    setup: "1.500€ de instalación y puesta en marcha (pago único)",
     desc: "Pro + chatbot con voz",
     features: ["Web + WhatsApp + Telegram", "Conversaciones ilimitadas", "3 proyectos", "CRM de leads incluido", "Detección ecommerce", "Chat voz 🎤 (STT + TTS)", "Soporte email prioritario"],
     gradient: "from-violet-500 to-purple-600",
@@ -115,10 +117,15 @@ export default function Planes() {
                 <h3 className="font-display text-xl font-bold">{p.name}</h3>
                 <p className="text-sm text-muted-foreground mt-1">{p.desc}</p>
               </div>
-              <div className="flex items-baseline gap-1 mb-6">
+              <div className="flex items-baseline gap-1 mb-2">
                 <span className="font-display text-4xl font-bold">{p.price}</span>
                 <span className="text-muted-foreground text-sm">{p.period}</span>
               </div>
+              {p.setup ? (
+                <p className="text-xs text-amber-400/90 mb-6 leading-snug">+ {p.setup}</p>
+              ) : (
+                <div className="mb-6" />
+              )}
               <ul className="space-y-3 mb-8 flex-1">
                 {p.features.map(f => (
                   <li key={f} className="flex items-center gap-2.5 text-sm">

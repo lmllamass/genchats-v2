@@ -16,7 +16,9 @@ router.post('/checkout', async (req, res) => {
     const { proyecto_id, user_id, user_email, price_id, tipo } = req.body;
     const stripe = getStripe();
 
-    const { data: cfg } = await supabase.from('config_plataforma').select('stripe_price_id_pro, stripe_price_id_super_pro, stripe_price_id_instalacion').eq('clave', 'plataforma').single();
+    // `select('*')` en vez de columnas sueltas: las de instalación por plan las añade la
+    // migración 011 y así el endpoint no revienta si todavía no se ha aplicado.
+    const { data: cfg } = await supabase.from('config_plataforma').select('*').eq('clave', 'plataforma').single();
     const priceId = price_id || (
       tipo === 'instalacion' ? cfg?.stripe_price_id_instalacion :
       tipo === 'super-pro'   ? cfg?.stripe_price_id_super_pro :
@@ -24,12 +26,27 @@ router.post('/checkout', async (req, res) => {
     );
     if (!priceId) return res.status(400).json({ error: 'Price ID not configured' });
 
+    // Cuota mensual + cuota de instalación (pago único) en el MISMO checkout: el cliente
+    // paga una sola vez y no puede quedarse suscrito sin haber pagado la puesta en marcha.
+    const line_items = [{ price: priceId, quantity: 1 }];
+    if (tipo !== 'instalacion') {
+      const instalacionId = tipo === 'super-pro'
+        ? cfg?.stripe_price_id_instalacion_super_pro
+        : cfg?.stripe_price_id_instalacion_pro;
+      if (instalacionId) line_items.push({ price: instalacionId, quantity: 1 });
+    }
+
     const appUrl = process.env.APP_URL || 'http://localhost:5173';
     const session = await stripe.checkout.sessions.create({
       mode: tipo === 'instalacion' ? 'payment' : 'subscription',
       payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items,
       customer_email: user_email,
+      // Los precios se crearon con tax_behavior='exclusive', así que Stripe Tax suma el
+      // 21% sobre el importe mostrado. Necesita dirección de facturación para calcularlo.
+      automatic_tax: { enabled: true },
+      billing_address_collection: 'required',
+      tax_id_collection: { enabled: true },   // permite al cliente introducir su CIF/NIF
       metadata: {
         proyecto_id: proyecto_id || '',
         user_id: user_id || '',

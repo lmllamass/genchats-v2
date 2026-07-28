@@ -182,6 +182,29 @@ export const api = {
   // Exportación a CSV — descarga un fichero, no JSON, así que no puede usar apiFetchAuth.
   exportarCsv: (tipo, proyectoId, filtros = {}) =>
     descargarCsv(tipo, proyectoId, filtros),
+
+  // Motor de reservas (las tablas tienen RLS de service_role: todo pasa por el backend)
+  listarRecursos: (proyectoId) =>
+    apiFetchAuth(`/api/reservas/recursos?proyecto_id=${proyectoId}`),
+  crearRecurso: (data) =>
+    apiFetchAuth('/api/reservas/recursos', { method: 'POST', body: JSON.stringify(data) }),
+  actualizarRecurso: (id, data) =>
+    apiFetchAuth(`/api/reservas/recursos/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  borrarRecurso: (id, forzar = false) =>
+    apiFetchAuth(`/api/reservas/recursos/${id}${forzar ? '?forzar=1' : ''}`, { method: 'DELETE' }),
+  crearFranjas: (data) =>
+    apiFetchAuth('/api/reservas/franjas', { method: 'POST', body: JSON.stringify(data) }),
+  borrarFranja: (id) =>
+    apiFetchAuth(`/api/reservas/franjas/${id}`, { method: 'DELETE' }),
+  listarReservas: (proyectoId, filtros = {}) => {
+    const p = new URLSearchParams({ proyecto_id: proyectoId });
+    for (const [k, v] of Object.entries(filtros)) if (v) p.set(k, v);
+    return apiFetchAuth(`/api/reservas?${p}`);
+  },
+  cancelarReserva: (codigo, proyectoId, motivo) =>
+    apiFetchAuth(`/api/reservas/${encodeURIComponent(codigo)}/cancelar`, {
+      method: 'POST', body: JSON.stringify({ proyecto_id: proyectoId, motivo }),
+    }),
 };
 
 /**

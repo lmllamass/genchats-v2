@@ -21,6 +21,7 @@ import generarPaginaRouter from './routes/generarPagina.js';
 import stripeRouter from './routes/stripe.js';
 import exportarRouter from './routes/exportar.js';
 import exportCsvRouter from './routes/exportCsv.js';
+import reservasRouter from './routes/reservas.js';
 import notifyRouter from './routes/notify.js';
 import ycloudRouter from './routes/ycloud.js';
 import publicChatbotRouter from './routes/publicChatbot.js';
@@ -97,6 +98,7 @@ app.use('/api/gena',    genaRouter);
 app.use('/api/conversations', requireAuth, conversationsRouter);
 app.use('/api/leads', requireAuth, leadsRouter);
 app.use('/api/export', requireAuth, exportCsvRouter);
+app.use('/api/reservas', requireAuth, reservasRouter);
 app.use('/api/whatsapp-templates', requireAuth, whatsappTemplatesRouter);
 
 // ── Error handler ──
