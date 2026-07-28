@@ -5,8 +5,8 @@
 > Cubre la **v1** (chatbot web + WhatsApp + Telegram + voz + Stripe + admin) y la **v2**
 > (reescritura con identidad omnicanal, BD Cloud propia, Actions Engine nativo).
 >
-> Última consolidación: **2026-07-10** · Repos: `github.com/lmllamass/genchats` (v1) y
-> `github.com/lmllamass/genchats-v2` (v2).
+> Última consolidación: **2026-07-28** · Repos: `github.com/lmllamass/genchats` (v1, congelado
+> como backup) y `github.com/lmllamass/genchats-v2` (v2, único código activo).
 
 ---
 
@@ -33,18 +33,24 @@ desplegar, verificar en vivo tras cada cambio, y mantener este documento al día
 
 ## 🔴 0.5 Dónde estamos AHORA (leer esto primero)
 
-- **Desde 2026-07-09, se itera por defecto en v2**, no en v1. v1 queda de referencia/histórico.
-  Todos los datos y API keys de v1 se migraron a v2 (proyectos, leads, pedidos, conversaciones,
-  usuarios — ver §8.3). El agente de voz de **Suministros Aguado** (proyecto de prueba principal,
+- **Desde 2026-07-28, v2 es el ÚNICO código activo de desarrollo. v1 queda como copia de
+  seguridad congelada** — sigue en producción sirviendo tráfico real, pero no se le porta código
+  nuevo salvo petición explícita del usuario para un incidente crítico. (Decisión previa del
+  2026-07-09 de "iterar por defecto en v2" queda formalizada y endurecida). Todos los datos y API
+  keys de v1 se migraron a v2 (proyectos, leads, pedidos, conversaciones, usuarios — ver §8.3). El
+  agente de voz de **Suministros Aguado** (proyecto de prueba principal,
   `cc0cb1d1-d708-4a67-b961-59333874fd27`) ya está repuntado en Retell a `api-v2.genchats.app`.
+- **El código se movió a iCloud Drive**: ruta real
+  `/Users/lmllamas/Library/Mobile Documents/com~apple~CloudDocs/konkabeza/genchats(/genchats-v2)`.
+  `/Users/lmllamas/Desktop/genchats` es ahora solo un symlink a esa ruta (ambas funcionan igual).
 - **El envío de WhatsApp fuera de la ventana de 24h — resuelto y confirmado en producción
   (2026-07-14)**: el primer intento (plantilla + texto libre después) NO funcionaba, mandar una
   plantilla no abre la ventana por sí sola. Ahora el mensaje va entero como variable DENTRO de la
   plantilla `genchats_info_agente` (una sola llamada), aprobada por Meta y probada con llamada
   real (ver §5.4).
-- **Latencia y memoria del agente de voz — 2 bugs corregidos, solo en v2 por ahora (2026-07-10)**:
-  saludo antes de resolver identidad (592ms→248ms) + combinar transcripción completa de la
-  llamada con memoria omnicanal. **Pendiente portar a v1** (ver §5.4).
+- **Latencia y memoria del agente de voz — 2 bugs corregidos, solo en v2 (2026-07-10)**: saludo
+  antes de resolver identidad (592ms→248ms) + combinar transcripción completa de la llamada con
+  memoria omnicanal. No se portea a v1 (código congelado, ver arriba) — ver §5.4.
 - **La BD de v1 en producción es Supabase Cloud** (`plsxmckjdxepawajjthc.supabase.co`), **NO** el
   Postgres self-hosted del VPS (`demo_supabase-db-1`) — ese contenedor es una copia vieja
   abandonada con datos congelados de mayo/junio. Ver §3.1, es una confusión fácil de repetir.
@@ -342,7 +348,7 @@ perdido alguna vez.
      el agente recuerda el nombre dado en el turno 1 al preguntarle en el turno 3.
   - Análisis completo (por qué NO conviene migrar a agentes nativos de Retell/YCloud como
     alternativa a esto) hecho con `/superpowers` el 2026-07-10 — la causa real eran estos 2 bugs
-    de implementación, no una limitación de arquitectura. **Pendiente: portar a v1.**
+    de implementación, no una limitación de arquitectura. No se portea a v1 (código congelado).
 - **Confirmación de números dictados**: si el cliente dicta un teléfono de viva voz, el agente
   lo repite dígito a dígito y pide confirmación antes de usarlo — evita errores de transcripción
   STT (se detectó un caso real: `609212140` en vez de `609211040`).
@@ -605,7 +611,8 @@ versiones apuntan al mismo webhook de n8n).
       plantilla no abre la ventana de 24h por sí sola, seguía fallando en producción (131047).
 - [x] Plantilla `genchats_info_agente` (mensaje completo como variable) — aprobada por Meta el
       2026-07-14 y confirmado por el usuario que el envío de WhatsApp fuera de ventana funciona.
-- [ ] Portar a v1 los 2 fixes de latencia/memoria del agente de voz (§0.5, §5.4) — solo en v2.
+- [x] ~~Portar a v1 los 2 fixes de latencia/memoria del agente de voz~~ — descartado: desde
+      2026-07-28 v1 es código congelado, no se le portea nada salvo incidente crítico (ver §0.5).
 - [ ] Crear plantillas equivalentes para otros proyectos que necesiten WhatsApp proactivo fuera de
       ventana (de momento solo existe para Suministros Aguado).
 - [ ] Webhook de Stripe propio para v2 (ahora mismo usa el de v1 copiado).
