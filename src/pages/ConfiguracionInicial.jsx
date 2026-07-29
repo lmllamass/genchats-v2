@@ -160,7 +160,7 @@ export default function ConfiguracionInicial() {
           <p style={{ color: "#94a3b8", fontSize: 14 }}>
             ¿Dudas con cualquiera de estos pasos? Escríbenos a{" "}
             <a href={`mailto:${ADMIN_EMAIL}`} style={{ color: "#a5b4fc" }}>{ADMIN_EMAIL}</a> o por WhatsApp a{" "}
-            <a href="https://wa.me/34689656122" style={{ color: "#a5b4fc" }}>+34 689 656 122</a> y te ayudamos paso a paso.
+            <a href="https://wa.me/34919932159" style={{ color: "#a5b4fc" }}>+34 919 932 159</a> y te ayudamos paso a paso.
           </p>
         </div>
       </main>

@@ -28,7 +28,7 @@ export default function Privacidad() {
             <h2 style={{ fontFamily: FONT_D, fontSize: 20, fontWeight: 600, color: "#fff", marginBottom: 8 }}>1. Responsable del tratamiento</h2>
             <p><strong>Konkabeza</strong> — konkabeza.es</p>
             <p>Email de contacto: <a href="mailto:hola@konkabeza.es" style={{ color: "#a5b4fc" }}>hola@konkabeza.es</a></p>
-            <p>WhatsApp: <a href="https://wa.me/34689656122" style={{ color: "#a5b4fc" }}>+34 689 656 122</a></p>
+            <p>WhatsApp: <a href="https://wa.me/34919932159" style={{ color: "#a5b4fc" }}>+34 919 932 159</a></p>
           </section>
 
           <section>

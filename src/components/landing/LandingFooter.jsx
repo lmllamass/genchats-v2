@@ -18,7 +18,7 @@ export default function LandingFooter() {
             <a href="/privacidad" className="hover:text-orange-400 transition-colors">Privacidad</a>
             <a href="/cookies" className="hover:text-orange-400 transition-colors">Cookies</a>
             <a href="/aviso-legal" className="hover:text-orange-400 transition-colors">Aviso Legal</a>
-            <a href="https://wa.me/34689656122" target="_blank" rel="noopener noreferrer" className="hover:text-orange-400 transition-colors">Contacto</a>
+            <a href="https://wa.me/34919932159" target="_blank" rel="noopener noreferrer" className="hover:text-orange-400 transition-colors">Contacto</a>
           </div>
 
           <p className="text-xs text-slate-600">

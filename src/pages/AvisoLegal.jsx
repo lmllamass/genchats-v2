@@ -29,7 +29,7 @@ export default function AvisoLegal() {
             <p><strong>Konkabeza</strong></p>
             <p>Web: <a href="https://konkabeza.es" target="_blank" rel="noopener noreferrer" style={{ color: "#a5b4fc" }}>konkabeza.es</a></p>
             <p>Email: <a href="mailto:hola@konkabeza.es" style={{ color: "#a5b4fc" }}>hola@konkabeza.es</a></p>
-            <p>WhatsApp: <a href="https://wa.me/34689656122" style={{ color: "#a5b4fc" }}>+34 689 656 122</a></p>
+            <p>WhatsApp: <a href="https://wa.me/34919932159" style={{ color: "#a5b4fc" }}>+34 919 932 159</a></p>
           </section>
 
           <section>

@@ -420,7 +420,7 @@ export default function MiCuenta() {
             <h3 className="font-display font-semibold mb-2">¿Necesitas más ayuda?</h3>
             <p className="text-sm text-muted-foreground mb-4">Contacta con nuestro equipo por WhatsApp o email.</p>
             <div className="flex gap-3">
-              <a href="https://wa.me/34689656122" target="_blank" rel="noopener noreferrer">
+              <a href="https://wa.me/34919932159" target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm">💬 WhatsApp</Button>
               </a>
               <a href="mailto:hola@konkabeza.es">
