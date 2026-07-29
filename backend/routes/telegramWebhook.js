@@ -70,13 +70,9 @@ router.post('/webhook/:proyecto_id', async (req, res) => {
     // ── Human agent mode ──────────────────────────────────────────────────
     if (proyecto.modo_atencion === 'humano') return;
 
-    // ── Message limit ─────────────────────────────────────────────────────
+    // Telegram requiere plan Pro o superior (ya filtrado por el `estado` de arriba) — los
+    // planes de pago no tienen límite de mensajes.
     const mensajesMes = proyecto.mensajes_mes || 0;
-    const limiteMensajes = proyecto.limite_mensajes || 200;
-    if (mensajesMes >= limiteMensajes) {
-      await sendTelegram(chatId, 'Lo sentimos, hemos alcanzado el límite de mensajes este mes.', botToken);
-      return;
-    }
 
     // ── Visitor ID — use Telegram user ID (stable across chats) ──────────
     const vid = `tg_${fromId}`;

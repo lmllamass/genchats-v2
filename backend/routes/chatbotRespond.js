@@ -32,13 +32,17 @@ router.post('/respond', async (req, res) => {
       return res.status(400).json({ error: 'Chatbot not configured' });
     }
 
-    // Rate limiting
+    // Rate limiting — solo aplica a proyectos sin plan de pago activado (gratis/prueba).
+    // Pro y Super Pro no tienen límite de conversaciones en ningún canal.
+    const proyectoActivado = proyecto.estado === 'pro_activo' || proyecto.estado === 'activo';
     const currentCount = proyecto.mensajes_count || 0;
-    const { data: cfgGlobal } = await supabase
-      .from('config_global').select('limite_mensajes_mes').eq('clave', 'global').single();
-    const globalLimit = cfgGlobal?.limite_mensajes_mes || 500;
-    if (currentCount >= globalLimit) {
-      return res.json({ reply: 'Has alcanzado tu límite mensual de conversaciones.' });
+    if (!proyectoActivado) {
+      const { data: cfgGlobal } = await supabase
+        .from('config_global').select('limite_mensajes_mes').eq('clave', 'global').single();
+      const freeLimit = cfgGlobal?.limite_mensajes_mes || 200;
+      if (currentCount >= freeLimit) {
+        return res.json({ reply: 'Has alcanzado tu límite mensual de conversaciones. Mejora tu plan para conversaciones ilimitadas.' });
+      }
     }
     await supabase.from('proyectos').update({ mensajes_count: currentCount + 1 }).eq('id', proyecto_id);
 

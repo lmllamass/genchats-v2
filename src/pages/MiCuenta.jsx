@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Link, Navigate } from "react-router-dom";
-import { User, Crown, LogOut, HelpCircle, BookOpen, AlertTriangle, Send, Loader2, ArrowLeft, Phone, Mic, CheckCircle2, Clock, Lock } from "lucide-react";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { User, Crown, LogOut, HelpCircle, BookOpen, AlertTriangle, Send, Loader2, ArrowLeft, Phone, Mic, CheckCircle2, Clock, Lock, Check, Zap, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useAuth } from "@/lib/AuthContext";
@@ -14,6 +14,39 @@ const PLAN_LABELS = {
   pro: { name: "Pro", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
   'super-pro': { name: "Super Pro", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20" },
 };
+
+const PLANS = [
+  {
+    id: "gratis",
+    name: "Gratis",
+    price: "0€",
+    period: "/mes",
+    desc: "Para probar sin compromiso",
+    features: ["Web widget", "100 conversaciones/mes", "1 proyecto", "Snippet para tu web", "Soporte comunidad"],
+    gradient: "from-slate-500 to-slate-600",
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: "79€",
+    period: "/mes + IVA",
+    setup: "490€ de instalación y puesta en marcha (pago único)",
+    desc: "Para negocios que quieren vender más",
+    features: ["Web + WhatsApp + Telegram", "Conversaciones ilimitadas", "3 proyectos", "CRM de leads incluido", "Detección ecommerce", "Soporte email prioritario"],
+    gradient: "from-orange-500 to-amber-500",
+    popular: true,
+  },
+  {
+    id: "super-pro",
+    name: "Super Pro",
+    price: "149€",
+    period: "/mes + IVA",
+    setup: "1.500€ de instalación y puesta en marcha (pago único)",
+    desc: "Pro + chatbot con voz",
+    features: ["Web + WhatsApp + Telegram", "Conversaciones ilimitadas", "3 proyectos", "CRM de leads incluido", "Detección ecommerce", "Chat voz 🎤 (STT + TTS)", "Soporte email prioritario"],
+    gradient: "from-violet-500 to-purple-600",
+  },
+];
 
 function WhatsAppStatusBadge({ proyecto, isPro }) {
   if (proyecto.whatsapp_activo) {
@@ -64,8 +97,48 @@ export default function MiCuenta() {
   const { user, plan, isPaid, projectCount, limit, proyectos, loading } = useSubscription();
   const isSuperPro = plan === "super-pro";
   const { supabaseUser, logout, isLoadingAuth } = useAuth();
-  const [tab, setTab] = useState("cuenta");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get("tab") === "plan" ? "plan" : "cuenta");
   const [linkingGoogle, setLinkingGoogle] = useState(false);
+  const [loadingPlan, setLoadingPlan] = useState(null);
+  const [loadingPortal, setLoadingPortal] = useState(false);
+
+  if (searchParams.get("success") === "true") {
+    toast.success("¡Suscripción activada! Bienvenido.");
+    window.history.replaceState({}, "", "/mi-cuenta?tab=plan");
+  }
+  if (searchParams.get("canceled") === "true") {
+    toast.info("Suscripción cancelada.");
+    window.history.replaceState({}, "", "/mi-cuenta?tab=plan");
+  }
+
+  const handleCheckout = async (planId) => {
+    setLoadingPlan(planId);
+    try {
+      const tipo = planId === "pro" ? "pro" : planId === "super-pro" ? "super-pro" : planId;
+      const res = await api.stripeCheckout({ tipo, user_email: user.email, user_id: user.id });
+      if (res?.url) {
+        window.location.href = res.url;
+      } else {
+        toast.error(res?.error || "Error al crear la sesión de pago");
+        setLoadingPlan(null);
+      }
+    } catch (err) {
+      toast.error(err.message || "Error al conectar con el servidor de pagos");
+      setLoadingPlan(null);
+    }
+  };
+
+  const handlePortal = async () => {
+    setLoadingPortal(true);
+    const res = await api.stripePortal({ user_email: user.email });
+    if (res?.url) {
+      window.location.href = res.url;
+    } else {
+      toast.error(res?.error || "Error al abrir el portal");
+      setLoadingPortal(false);
+    }
+  };
 
   const handleLinkGoogle = async () => {
     setLinkingGoogle(true);
@@ -116,6 +189,7 @@ export default function MiCuenta() {
 
   const TABS = [
     { id: "cuenta", label: "Mi cuenta", icon: User },
+    { id: "plan", label: "Plan y facturación", icon: Crown },
     { id: "ayuda", label: "Ayuda y docs", icon: BookOpen },
     { id: "problema", label: "Reportar problema", icon: AlertTriangle },
   ];
@@ -173,8 +247,8 @@ export default function MiCuenta() {
             </div>
 
             <div className="flex gap-3">
-              <Button asChild variant="outline" className="flex-1">
-                <Link to="/planes"><Crown className="w-4 h-4 mr-2" />{isPaid ? "Gestionar plan" : "Mejorar plan"}</Link>
+              <Button variant="outline" className="flex-1" onClick={() => setTab("plan")}>
+                <Crown className="w-4 h-4 mr-2" />{isPaid ? "Gestionar plan" : "Mejorar plan"}
               </Button>
               <Button variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => logout("/")}>
                 <LogOut className="w-4 h-4 mr-2" /> Salir
@@ -237,15 +311,83 @@ export default function MiCuenta() {
               {!isPaid && (
                 <p className="text-xs text-muted-foreground">
                   Activa WhatsApp Business con el{" "}
-                  <Link to="/planes" className="text-amber-400 hover:underline font-medium">Plan Pro →</Link>
+                  <button onClick={() => setTab("plan")} className="text-amber-400 hover:underline font-medium">Plan Pro →</button>
                 </p>
               )}
               {isPaid && !isSuperPro && (
                 <p className="text-xs text-muted-foreground">
                   Añade voz IA con el{" "}
-                  <Link to="/planes" className="text-violet-400 hover:underline font-medium">Plan Super Pro →</Link>
+                  <button onClick={() => setTab("plan")} className="text-violet-400 hover:underline font-medium">Plan Super Pro →</button>
                 </p>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Plan y facturación */}
+      {tab === "plan" && (
+        <div className="space-y-8">
+          <div className="grid md:grid-cols-3 gap-5">
+            {PLANS.map(p => {
+              const isCurrent = plan === p.id;
+              return (
+                <div key={p.id} className={`relative rounded-2xl border p-6 transition-all flex flex-col ${p.popular ? "border-primary/50 bg-card" : "border-border bg-card/80"}`}>
+                  {p.popular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-r from-violet-500 to-blue-500 text-white text-[10px] font-semibold uppercase tracking-wider">
+                      Popular
+                    </div>
+                  )}
+                  <div className="mb-4">
+                    <h3 className="font-display text-lg font-bold">{p.name}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">{p.desc}</p>
+                  </div>
+                  <div className="flex items-baseline gap-1 mb-1">
+                    <span className="font-display text-3xl font-bold">{p.price}</span>
+                    <span className="text-muted-foreground text-xs">{p.period}</span>
+                  </div>
+                  {p.setup ? (
+                    <p className="text-[11px] text-amber-400/90 mb-5 leading-snug">+ {p.setup}</p>
+                  ) : (
+                    <div className="mb-5" />
+                  )}
+                  <ul className="space-y-2 mb-6 flex-1">
+                    {p.features.map(f => (
+                      <li key={f} className="flex items-center gap-2 text-xs">
+                        <Check className="w-3.5 h-3.5 text-primary shrink-0" />{f}
+                      </li>
+                    ))}
+                  </ul>
+                  {isCurrent ? (
+                    <Button disabled variant="outline" className="w-full" size="sm">
+                      <Check className="w-4 h-4 mr-2" /> Tu plan actual
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      className={`w-full bg-gradient-to-r ${p.gradient} hover:opacity-90 text-white`}
+                      onClick={() => handleCheckout(p.id)}
+                      disabled={loadingPlan === p.id}
+                    >
+                      {loadingPlan === p.id ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Redirigiendo…</>
+                      ) : (
+                        <><Zap className="w-4 h-4 mr-2" /> Suscribirse</>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {isPaid && user?.stripe_customer_id && (
+            <div className="text-center">
+              <Button variant="outline" onClick={handlePortal} disabled={loadingPortal} className="gap-2">
+                {loadingPortal ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4" />}
+                Gestionar suscripción
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2">Cambiar plan, actualizar pago o cancelar</p>
             </div>
           )}
         </div>

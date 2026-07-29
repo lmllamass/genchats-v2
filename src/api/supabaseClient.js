@@ -1,11 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Fallbacks hardcoded: la anon key es pública por diseño (se incluye en el bundle JS igualmente).
-// Evita que un rebuild sin las vars de entorno rompa el acceso.
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-  || 'https://plsxmckjdxepawajjthc.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  || 'sb_publishable_rDVfEjppEdrUgCXfk50zgQ_3e7x18yN';
+// SIN fallback: un build sin VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY debe fallar de forma
+// ruidosa, nunca caer en silencio sobre las credenciales de otro entorno (p. ej. producción).
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Faltan VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY en el build — revisa el .env usado al hacer npm run build.');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

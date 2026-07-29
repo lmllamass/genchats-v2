@@ -1,6 +1,6 @@
 /* global __BUILD_TIME__ */
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Plus, MessageCircle, Shield, Crown, User, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, Plus, MessageCircle, Shield, User, Users, LogOut } from "lucide-react";
 import { motion } from "framer-motion";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useAuth } from "@/lib/AuthContext";
@@ -10,7 +10,6 @@ const NAV = [
   { to: "/app", icon: LayoutDashboard, label: "Mis Chatbots" },
   { to: "/nuevo", icon: Plus, label: "Nuevo Chatbot" },
   { to: "/leads", icon: Users, label: "Leads" },
-  { to: "/planes", icon: Crown, label: "Planes" },
   { to: "/mi-cuenta", icon: User, label: "Mi cuenta" },
 ];
 

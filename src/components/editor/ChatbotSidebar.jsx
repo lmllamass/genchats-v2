@@ -55,7 +55,7 @@ export default function ChatbotSidebar({ config, onChange }) {
             Toda la información que el chatbot usará para responder: servicios, productos, precios, horarios, FAQs, políticas…
             Se usa en web, WhatsApp y Telegram.
           </p>
-          <EditorField label="Base de conocimiento" placeholder="Escribe aquí toda la información sobre tu negocio que el chatbot debe conocer..." textarea textareaClass="min-h-[220px]" value={config.knowledge_base} onChange={v => set("knowledge_base", v)} />
+          <EditorField label="Base de conocimiento" placeholder="Escribe aquí toda la información sobre tu negocio que el chatbot debe conocer..." textarea expandable textareaClass="min-h-[220px]" value={config.knowledge_base} onChange={v => set("knowledge_base", v)} />
         </div>
         <Separator />
         <div>
@@ -65,7 +65,7 @@ export default function ChatbotSidebar({ config, onChange }) {
             Rellénalo solo si necesitas que en las llamadas telefónicas diga cosas distintas (p. ej. un guion
             de venta o instrucciones que no aplican por escrito).
           </p>
-          <EditorField label="Base de conocimiento (Voz)" placeholder="Déjalo vacío para usar la Base de conocimiento general. Solo rellénalo si la voz necesita un contexto distinto..." textarea textareaClass="min-h-[160px]" value={config.knowledge_base_voz} onChange={v => set("knowledge_base_voz", v)} />
+          <EditorField label="Base de conocimiento (Voz)" placeholder="Déjalo vacío para usar la Base de conocimiento general. Solo rellénalo si la voz necesita un contexto distinto..." textarea expandable textareaClass="min-h-[160px]" value={config.knowledge_base_voz} onChange={v => set("knowledge_base_voz", v)} />
         </div>
       </div>
     </ScrollArea>

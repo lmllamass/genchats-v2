@@ -174,13 +174,10 @@ router.post('/webhook', async (req, res) => {
     // ── Human agent mode ──────────────────────────────────────────────────
     if (proyecto.modo_atencion === 'humano') return;
 
-    // ── Message limit ─────────────────────────────────────────────────────
+    // WhatsApp requiere plan Pro o superior (ya filtrado por el `estado` de arriba) — los
+    // planes de pago no tienen límite de mensajes: WhatsApp/Meta y el número los factura
+    // YCloud directamente al cliente, no genchats.
     const mensajesMes = proyecto.mensajes_mes || 0;
-    const limiteMensajes = proyecto.limite_mensajes || 200;
-    if (mensajesMes >= limiteMensajes) {
-      await sendYCloud(fromNumber, 'Lo sentimos, hemos alcanzado el límite de mensajes este mes.', YCLOUD_API_KEY, toNumber);
-      return;
-    }
 
     // ── Load history, lead and action tools ──────────────────────────────
     const [legacyHistory, unifiedHistory, existingLead, { enabledNames: actionTools, configs: toolConfigs }] = await Promise.all([

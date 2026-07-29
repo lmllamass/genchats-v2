@@ -36,9 +36,10 @@ router.post('/checkout', async (req, res) => {
       if (instalacionId) line_items.push({ price: instalacionId, quantity: 1 });
     }
 
+    const esSuscripcion = tipo !== 'instalacion';
     const appUrl = process.env.APP_URL || 'http://localhost:5173';
     const session = await stripe.checkout.sessions.create({
-      mode: tipo === 'instalacion' ? 'payment' : 'subscription',
+      mode: esSuscripcion ? 'subscription' : 'payment',
       payment_method_types: ['card'],
       line_items,
       customer_email: user_email,
@@ -47,13 +48,16 @@ router.post('/checkout', async (req, res) => {
       automatic_tax: { enabled: true },
       billing_address_collection: 'required',
       tax_id_collection: { enabled: true },   // permite al cliente introducir su CIF/NIF
+      // La instalación (pago único) se cobra hoy igualmente; el trial solo retrasa la
+      // PRIMERA cuota recurrente 30 días desde el alta, como se acordó con el cliente.
+      ...(esSuscripcion ? { subscription_data: { trial_period_days: 30 } } : {}),
       metadata: {
         proyecto_id: proyecto_id || '',
         user_id: user_id || '',
         tipo: tipo || 'pro',
       },
       success_url: `${appUrl}/activacion?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/planes`,
+      cancel_url: `${appUrl}/mi-cuenta?tab=plan`,
     });
 
     res.json({ url: session.url, session_id: session.id });
