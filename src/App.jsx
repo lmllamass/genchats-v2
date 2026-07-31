@@ -36,6 +36,7 @@ import Activacion from '@/pages/Activacion';
 import ConfiguracionInicial from '@/pages/ConfiguracionInicial';
 import Conversaciones from '@/pages/Conversaciones';
 import Leads from '@/pages/Leads';
+import Contacto from '@/pages/Contacto';
 import Debug from '@/pages/Debug';
 
 const AuthenticatedApp = () => {
@@ -57,6 +58,7 @@ const AuthenticatedApp = () => {
           <Route path="/mi-cuenta" element={isLoading ? <LoadingScreen /> : <MiCuenta />} />
           <Route path="/conversaciones" element={isLoading ? <LoadingScreen /> : <Conversaciones />} />
           <Route path="/leads" element={isLoading ? <LoadingScreen /> : <Leads />} />
+          <Route path="/contacto/:id" element={isLoading ? <LoadingScreen /> : <Contacto />} />
         </Route>
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={isLoading ? <LoadingScreen /> : <AdminDashboard />} />

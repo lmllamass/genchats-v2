@@ -112,6 +112,62 @@ async function resolverContactosDeVoz(proyectoId, callIds) {
   return mapa;
 }
 
+// GET /api/conversations/customer/:customerId — ficha 360 del contacto
+// Devuelve sus conversaciones SEPARADAS por canal (no fusionadas): mezclarlas pierde el
+// hilo de cada canal, que es justo lo que se quiere revisar.
+// Se declara antes que las rutas /:id/... para que no las capture.
+router.get('/customer/:customerId', async (req, res) => {
+  try {
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('id, proyecto_id, display_name, primary_email, primary_phone, company, status, tags, first_seen_at, last_seen_at')
+      .eq('id', req.params.customerId)
+      .single()
+      .then(r => r, () => ({ data: null }));
+    if (!customer) return res.status(404).json({ error: 'Contacto no encontrado' });
+
+    const proyecto = await ownedProject(customer.proyecto_id, req.user.id);
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    const [{ data: convs }, { data: msgs }, { data: identidades }] = await Promise.all([
+      supabase.from('customer_conversations')
+        .select('id, channel, channel_thread_id, legacy_visitor_id, status, human_takeover, first_message_at, last_message_at')
+        .eq('customer_id', customer.id)
+        .order('last_message_at', { ascending: false })
+        .then(r => r, () => ({ data: [] })),
+      supabase.from('customer_messages')
+        .select('id, conversation_id, channel, role, content, created_at')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: true })
+        .limit(1000)
+        .then(r => r, () => ({ data: [] })),
+      supabase.from('customer_identities')
+        .select('identity_type, identity_value, verified')
+        .eq('customer_id', customer.id)
+        .then(r => r, () => ({ data: [] })),
+    ]);
+
+    const porConversacion = {};
+    for (const m of (msgs || [])) (porConversacion[m.conversation_id] ||= []).push(m);
+
+    // Agrupa por canal manteniendo cada hilo separado dentro del canal.
+    const canales = {};
+    for (const c of (convs || [])) {
+      (canales[c.channel] ||= []).push({ ...c, mensajes: porConversacion[c.id] || [] });
+    }
+
+    res.json({
+      customer,
+      identidades: identidades || [],
+      canales,
+      proyecto_nombre: proyecto.nombre,
+    });
+  } catch (err) {
+    console.error('[conversations] customer 360 error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/conversations?projectId=X&canal=todos&page=1&limit=20
 router.get('/', async (req, res) => {
   try {
@@ -215,7 +271,7 @@ router.get('/:id/messages', async (req, res) => {
 
     const { data: messages, error } = await supabase
       .from('conversaciones_chat')
-      .select('id, role, content, created_at')
+      .select('id, role, content, created_at, canal')
       .eq('proyecto_id', proyecto_id)
       .eq('visitor_id', visitor_id)
       .eq('canal', canal)
@@ -287,11 +343,27 @@ router.patch('/:id/takeover', async (req, res) => {
       .single();
     if (uErr) throw uErr;
 
-    // Notify customer when human agent takes over WhatsApp conversation
+    // Aviso al cliente de que entra un agente humano — solo si la ventana de 24h sigue
+    // abierta. Fuera de ella es texto libre: YCloud lo acepta, Meta lo descarta (131047)
+    // y nadie se entera. Además, en una conversación abierta desde una llamada este aviso
+    // sería el primer mensaje que recibe el cliente, sin contexto ninguno.
     if (human_takeover && canal === 'whatsapp') {
-      const apiKey = await getYCloudKey(proyecto);
-      if (apiKey && proyecto.ycloud_phone_number) {
-        await sendYCloud(visitor_id, 'Un agente humano se ha unido a la conversación.', apiKey, proyecto.ycloud_phone_number);
+      const { data: ultimoEntrante } = await supabase
+        .from('conversaciones_chat')
+        .select('created_at')
+        .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
+        .eq('role', 'user')
+        .order('created_at', { ascending: false })
+        .limit(1).maybeSingle()
+        .then(r => r, () => ({ data: null }));
+      const ventanaAbierta = ultimoEntrante?.created_at
+        && (Date.now() - new Date(ultimoEntrante.created_at).getTime()) < 24 * 60 * 60 * 1000;
+
+      if (ventanaAbierta) {
+        const apiKey = await getYCloudKey(proyecto);
+        if (apiKey && proyecto.ycloud_phone_number) {
+          await sendYCloud(visitor_id, 'Un agente humano se ha unido a la conversación.', apiKey, proyecto.ycloud_phone_number);
+        }
       }
     }
 

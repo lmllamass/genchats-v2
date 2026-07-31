@@ -30,6 +30,7 @@ export default function Conversaciones() {
   const [plantillas, setPlantillas] = useState([]);
   const [plantillasLoading, setPlantillasLoading] = useState(false);
   const [showNotas, setShowNotas] = useState(false);
+  const [abriendoWhatsApp, setAbriendoWhatsApp] = useState(false);
   const intervalRef = useRef(null);
 
   const fetchConversations = useCallback(async (quiet = false) => {
@@ -160,6 +161,48 @@ export default function Conversaciones() {
     }
   };
 
+  /**
+   * Salta de una llamada a la conversación de WhatsApp de ese mismo número.
+   *
+   * Si ya existe en la lista se selecciona; si no, se construye el hilo (una conversación
+   * de WhatsApp "es" la tripleta proyecto+canal+teléfono, así que puede no tener mensajes
+   * todavía). Se activa el modo humano porque quien va a escribir es la operadora — sin
+   * eso el composer no aparece.
+   */
+  const handleAbrirWhatsApp = async (telefono) => {
+    if (!activeConv || !telefono) return;
+    setAbriendoWhatsApp(true);
+    try {
+      const existente = conversations.find(c =>
+        c.proyecto_id === activeConv.proyecto_id && c.canal === "whatsapp" && c.visitor_id === telefono);
+
+      const destino = existente || {
+        id: encodeConvId(activeConv.proyecto_id, "whatsapp", telefono),
+        proyecto_id: activeConv.proyecto_id,
+        proyecto_nombre: activeConv.proyecto_nombre,
+        visitor_id: telefono,
+        canal: "whatsapp",
+        human_takeover: false,
+        contacto: activeConv.contacto || null,
+      };
+
+      if (!destino.human_takeover) {
+        await api.setTakeover(encodeConvId(destino.proyecto_id, "whatsapp", telefono), true);
+        destino.human_takeover = true;
+      }
+
+      handleSelectConv(destino);
+      if (!existente) {
+        toast.info("Conversación nueva por WhatsApp — al no haber escrito el cliente, solo puedes enviar una plantilla.");
+        fetchConversations(true);
+      }
+    } catch (err) {
+      toast.error("No se pudo abrir la conversación de WhatsApp: " + err.message);
+    } finally {
+      setAbriendoWhatsApp(false);
+    }
+  };
+
   const handleSendPlantilla = async (plantilla, valores) => {
     if (!activeConv) return;
     try {
@@ -219,6 +262,8 @@ export default function Conversaciones() {
               onToggleNotas={() => setShowNotas(v => !v)}
               onToggleTakeover={handleToggleTakeover}
               togglingTakeover={togglingTakeover}
+              onAbrirWhatsApp={handleAbrirWhatsApp}
+              abriendoWhatsApp={abriendoWhatsApp}
             />
 
             {/* Human takeover banner */}

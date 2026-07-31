@@ -1,19 +1,15 @@
-import { Bot, User, Loader2, Phone, Globe, StickyNote, Mail } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Bot, User, Loader2, Phone, StickyNote, Mail, MessageSquare, IdCard } from "lucide-react";
 import { etiquetaContacto, datosContacto } from "@/lib/inboxContacto";
-
-const CANAL_LABEL = { whatsapp: "WhatsApp", web: "Web", telegram: "Telegram", phone: "Voz" };
-const CANAL_ICON = {
-  whatsapp: <span className="text-[11px]">💬</span>,
-  web: <Globe className="w-3 h-3" />,
-  telegram: <span className="text-[11px]">✈️</span>,
-  phone: <Phone className="w-3 h-3" />,
-};
+import { IconoCanal, CANAL_LABEL } from "@/lib/canales";
 
 /** Cabecera de la conversación: contacto, acceso a notas y conmutador IA/humano. */
 export default function ConversationHeader({
-  conv, showNotas, onToggleNotas, onToggleTakeover, togglingTakeover,
+  conv, showNotas, onToggleNotas, onToggleTakeover, togglingTakeover, onAbrirWhatsApp, abriendoWhatsApp,
 }) {
   const contacto = datosContacto(conv);
+  // Desde una llamada se puede saltar a WhatsApp si conocemos el número del que llamó.
+  const puedeSaltarAWhatsApp = conv.canal === "phone" && !!contacto.telefono;
   return (
     <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-card/50 flex-shrink-0">
       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/40 to-blue-500/40 flex items-center justify-center">
@@ -23,9 +19,18 @@ export default function ConversationHeader({
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold truncate">{etiquetaContacto(conv)}</span>
           <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-            {CANAL_ICON[conv.canal]}
+            <IconoCanal canal={conv.canal} />
             {CANAL_LABEL[conv.canal] || conv.canal}
           </span>
+          {conv.contacto?.customer_id && (
+            <Link
+              to={`/contacto/${conv.contacto.customer_id}`}
+              title="Ver ficha del contacto y todas sus conversaciones"
+              className="flex items-center gap-1 text-[11px] text-primary hover:underline shrink-0"
+            >
+              <IdCard className="w-3.5 h-3.5" /> Ficha
+            </Link>
+          )}
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-[11px] text-muted-foreground">{conv.proyecto_nombre}</p>
@@ -42,6 +47,20 @@ export default function ConversationHeader({
           )}
         </div>
       </div>
+
+      {puedeSaltarAWhatsApp && (
+        <button
+          onClick={() => onAbrirWhatsApp?.(contacto.telefono)}
+          disabled={abriendoWhatsApp}
+          title={`Continuar por WhatsApp con ${contacto.telefono}`}
+          className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-green-500/30 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors shrink-0 disabled:opacity-50"
+        >
+          {abriendoWhatsApp
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <MessageSquare className="w-3.5 h-3.5" />}
+          WhatsApp
+        </button>
+      )}
 
       <button
         onClick={onToggleNotas}

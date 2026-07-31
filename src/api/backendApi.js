@@ -157,6 +157,8 @@ export const api = {
   /** Envía una plantilla HSM aprobada — funciona también fuera de la ventana de 24h. */
   sendConversationTemplate: (convId, plantilla) =>
     apiFetchAuth(`/api/conversations/${convId}/message`, { method: 'POST', body: JSON.stringify({ plantilla }) }),
+  /** Ficha 360 del contacto: sus conversaciones separadas por canal. */
+  getCustomer360: (customerId) => apiFetchAuth(`/api/conversations/customer/${customerId}`),
   listConversationPlantillas: (convId) =>
     apiFetchAuth(`/api/conversations/${convId}/plantillas`),
   listConversationNotas: (convId) =>

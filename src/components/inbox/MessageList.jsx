@@ -1,6 +1,7 @@
 import { ArrowDown, Loader2 } from "lucide-react";
 import moment from "moment";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
+import { IconoCanal, CANAL_LABEL } from "@/lib/canales";
 
 /**
  * Historial de mensajes con auto-scroll que no interrumpe la lectura.
@@ -33,9 +34,17 @@ export default function MessageList({ messages, loading, convKey, className = ""
                 }`}
               >
                 <p className="whitespace-pre-wrap">{msg.content}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-1 text-right">
-                  {moment(msg.created_at).format("HH:mm")}
-                </p>
+                <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-muted-foreground/60">
+                  {/* Canal del mensaje: relevante cuando se mezclan hilos de varios canales
+                      (ficha de contacto) y como recordatorio de por dónde entró cada uno. */}
+                  {(msg.canal || msg.channel) && (
+                    <span className="flex items-center gap-0.5 opacity-80"
+                      title={CANAL_LABEL[msg.canal || msg.channel] || (msg.canal || msg.channel)}>
+                      <IconoCanal canal={msg.canal || msg.channel} className="w-2.5 h-2.5" />
+                    </span>
+                  )}
+                  <span>{moment(msg.created_at).format("HH:mm")}</span>
+                </div>
               </div>
             </div>
           ))

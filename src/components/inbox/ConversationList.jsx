@@ -1,14 +1,9 @@
-import { MessageCircle, Search, User, Loader2, Globe, RotateCcw, Phone } from "lucide-react";
+import { MessageCircle, Search, User, Loader2, RotateCcw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import moment from "moment";
 import { etiquetaContacto } from "@/lib/inboxContacto";
+import { IconoCanal } from "@/lib/canales";
 
-const CANAL_ICON = {
-  whatsapp: <span className="text-[11px]">💬</span>,
-  web: <Globe className="w-3 h-3" />,
-  telegram: <span className="text-[11px]">✈️</span>,
-  phone: <Phone className="w-3 h-3" />,
-};
 const CANAL_FILTERS = ["todos", "whatsapp", "phone", "web", "telegram"];
 const FILTRO_LABEL = { todos: "Todos", whatsapp: "WhatsApp", phone: "Voz", web: "Web", telegram: "Telegram" };
 
@@ -83,7 +78,7 @@ export default function ConversationList({
                 <span className="text-[10px] text-muted-foreground shrink-0">{moment(conv.last_message_at).fromNow()}</span>
               </div>
               <div className="flex items-center gap-1 mt-0.5">
-                <span className="flex items-center gap-0.5 text-muted-foreground">{CANAL_ICON[conv.canal]}</span>
+                <span className="flex items-center gap-0.5 text-muted-foreground"><IconoCanal canal={conv.canal} /></span>
                 <span className="text-[10px] text-muted-foreground truncate flex-1">{conv.last_message?.substring(0, 45) || "—"}</span>
               </div>
               <div className="flex items-center gap-2 mt-0.5">
