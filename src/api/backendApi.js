@@ -82,6 +82,10 @@ export const api = {
   adminUpdateConfig: (data) =>
     apiFetchAuth('/api/admin/config', { method: 'PUT', body: JSON.stringify(data) }),
 
+  adminGetConfigGlobal: () => apiFetchAuth('/api/admin/config-global'),
+  adminUpdateConfigGlobal: (data) =>
+    apiFetchAuth('/api/admin/config-global', { method: 'PUT', body: JSON.stringify(data) }),
+
   // Returns merged auth+profile data using service role (bypasses RLS)
   adminGetUsuarios: () =>
     apiFetchAuth('/api/admin/usuarios'),
@@ -154,17 +158,37 @@ export const api = {
     apiFetchAuth(`/api/conversations/${convId}/takeover`, { method: 'PATCH', body: JSON.stringify({ human_takeover }) }),
   sendConversationMessage: (convId, text) =>
     apiFetchAuth(`/api/conversations/${convId}/message`, { method: 'POST', body: JSON.stringify({ text }) }),
-  /** Envía una plantilla HSM aprobada — funciona también fuera de la ventana de 24h. */
-  sendConversationTemplate: (convId, plantilla) =>
-    apiFetchAuth(`/api/conversations/${convId}/message`, { method: 'POST', body: JSON.stringify({ plantilla }) }),
+  getConversationVentana: (convId) => apiFetchAuth(`/api/conversations/${convId}/ventana`),
+  sendConversationTemplate: (convId, payload) =>
+    apiFetchAuth(`/api/conversations/${convId}/plantilla`, { method: 'POST', body: JSON.stringify(payload) }),
+  listWhatsappTemplates: (proyecto_id) =>
+    apiFetchAuth(`/api/whatsapp-templates?proyecto_id=${encodeURIComponent(proyecto_id)}`),
+  listConversationNotas: (convId) => apiFetchAuth(`/api/conversations/${convId}/notas`),
+  addConversationNota: (convId, contenido) =>
+    apiFetchAuth(`/api/conversations/${convId}/notas`, { method: 'POST', body: JSON.stringify({ contenido }) }),
+  deleteConversationNota: (convId, notaId) =>
+    apiFetchAuth(`/api/conversations/${convId}/notas/${notaId}`, { method: 'DELETE' }),
+  /** Plantillas del composer: HSM aprobadas (YCloud) + respuestas rápidas locales, ya normalizadas. */
+  listConversationPlantillas: (convId) => apiFetchAuth(`/api/conversations/${convId}/plantillas`),
   /** Ficha 360 del contacto: sus conversaciones separadas por canal. */
   getCustomer360: (customerId) => apiFetchAuth(`/api/conversations/customer/${customerId}`),
-  listConversationPlantillas: (convId) =>
-    apiFetchAuth(`/api/conversations/${convId}/plantillas`),
-  listConversationNotas: (convId) =>
-    apiFetchAuth(`/api/conversations/${convId}/notas`),
-  createConversationNota: (convId, contenido) =>
-    apiFetchAuth(`/api/conversations/${convId}/notas`, { method: 'POST', body: JSON.stringify({ contenido }) }),
+
+  // Mensajes de WhatsApp (antes se leían directo de Supabase con la clave anónima)
+  listMensajesWa: (proyecto_id, limit = 30) =>
+    apiFetchAuth(`/api/mensajes-wa?proyecto_id=${encodeURIComponent(proyecto_id)}&limit=${limit}`),
+  adminListLeads: (limit = 50) => apiFetchAuth(`/api/admin/leads?limit=${limit}`),
+  adminUltimoMensajeWa: () => apiFetchAuth('/api/admin/ultimo-mensaje-wa'),
+
+  // Operadoras (bandeja compartida)
+  getMisProyectos: () => apiFetchAuth('/api/operadores/mis-proyectos'),
+  listOperadores: (proyecto_id) =>
+    apiFetchAuth(`/api/operadores?proyecto_id=${encodeURIComponent(proyecto_id)}`),
+  invitarOperador: (data) =>
+    apiFetchAuth('/api/operadores', { method: 'POST', body: JSON.stringify(data) }),
+  updateOperador: (id, data) =>
+    apiFetchAuth(`/api/operadores/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteOperador: (id) =>
+    apiFetchAuth(`/api/operadores/${id}`, { method: 'DELETE' }),
 
   // Leads CRM
   listLeads: (params = {}) => {

@@ -206,11 +206,15 @@ export default function Conversaciones() {
   const handleSendPlantilla = async (plantilla, valores) => {
     if (!activeConv) return;
     try {
+      // Contrato compartido con la bandeja de operadoras: name/language/params, más
+      // bodyPreview (el texto ya sustituido) que es lo que se guarda en el historial.
+      const bodyPreview = String(plantilla.contenido || "")
+        .replace(/\{\{(\d+)\}\}/g, (m, n) => valores[parseInt(n, 10) - 1] ?? m);
       await api.sendConversationTemplate(convId, {
         name: plantilla.wa_template_name,
-        language: plantilla.wa_language,
-        contenido: plantilla.contenido,
-        valores,
+        language: plantilla.wa_language || "es",
+        params: valores,
+        bodyPreview,
       });
       toast.success("Plantilla enviada");
       fetchMessages(activeConv, true);

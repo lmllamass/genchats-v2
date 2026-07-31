@@ -6,6 +6,10 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import RoleRoute from '@/components/RoleRoute';
+import Contacto from '@/pages/Contacto';
+import OperadoraLayout from '@/components/OperadoraLayout';
+import OperadoraInbox from '@/pages/OperadoraInbox';
 
 import Landing from '@/pages/Landing.jsx';
 import Login from '@/pages/Login';
@@ -36,7 +40,6 @@ import Activacion from '@/pages/Activacion';
 import ConfiguracionInicial from '@/pages/ConfiguracionInicial';
 import Conversaciones from '@/pages/Conversaciones';
 import Leads from '@/pages/Leads';
-import Contacto from '@/pages/Contacto';
 import Debug from '@/pages/Debug';
 
 const AuthenticatedApp = () => {
@@ -50,15 +53,28 @@ const AuthenticatedApp = () => {
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute />}>
-        <Route element={<Layout />}>
-          <Route path="/app" element={isLoading ? <LoadingScreen /> : <Dashboard />} />
-          <Route path="/nuevo" element={isLoading ? <LoadingScreen /> : <NuevoProyecto />} />
-          <Route path="/exportar/:id" element={isLoading ? <LoadingScreen /> : <Exportar />} />
-          <Route path="/planes" element={isLoading ? <LoadingScreen /> : <Planes />} />
-          <Route path="/mi-cuenta" element={isLoading ? <LoadingScreen /> : <MiCuenta />} />
-          <Route path="/conversaciones" element={isLoading ? <LoadingScreen /> : <Conversaciones />} />
-          <Route path="/leads" element={isLoading ? <LoadingScreen /> : <Leads />} />
-          <Route path="/contacto/:id" element={isLoading ? <LoadingScreen /> : <Contacto />} />
+        {/* Cuentas de tipo 'operadora': solo la bandeja de entrada. Una cuenta de cliente
+            que entre aquí se redirige a /app, y viceversa (ver RoleRoute). */}
+        <Route element={<RoleRoute permite="operadora" />}>
+          <Route element={<OperadoraLayout />}>
+            <Route path="/inbox" element={<OperadoraInbox />} />
+            {/* La ficha del contacto también la necesita la operadora desde su bandeja */}
+            <Route path="/contacto/:id" element={<Contacto />} />
+          </Route>
+        </Route>
+
+        <Route element={<RoleRoute permite="cliente" />}>
+          <Route element={<Layout />}>
+            <Route path="/app" element={isLoading ? <LoadingScreen /> : <Dashboard />} />
+            <Route path="/nuevo" element={isLoading ? <LoadingScreen /> : <NuevoProyecto />} />
+            <Route path="/exportar/:id" element={isLoading ? <LoadingScreen /> : <Exportar />} />
+            <Route path="/planes" element={isLoading ? <LoadingScreen /> : <Planes />} />
+            <Route path="/mi-cuenta" element={isLoading ? <LoadingScreen /> : <MiCuenta />} />
+            <Route path="/conversaciones" element={isLoading ? <LoadingScreen /> : <Conversaciones />} />
+            <Route path="/leads" element={isLoading ? <LoadingScreen /> : <Leads />} />
+            <Route path="/contacto/:id" element={isLoading ? <LoadingScreen /> : <Contacto />} />
+          </Route>
+          <Route path="/editor/:id" element={isLoading ? <LoadingScreen /> : <Editor />} />
         </Route>
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={isLoading ? <LoadingScreen /> : <AdminDashboard />} />
@@ -70,7 +86,6 @@ const AuthenticatedApp = () => {
           <Route path="/admin/proyectos/:id" element={isLoading ? <LoadingScreen /> : <AdminProyectoDetalle />} />
           <Route path="/admin/deploy-agent" element={isLoading ? <LoadingScreen /> : <DeployAgent />} />
         </Route>
-        <Route path="/editor/:id" element={isLoading ? <LoadingScreen /> : <Editor />} />
         <Route path="/activacion" element={isLoading ? <LoadingScreen /> : <Activacion />} />
       </Route>
       <Route path="/chat/:id" element={<ChatbotPublic />} />

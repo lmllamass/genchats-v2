@@ -1,7 +1,10 @@
 import express from 'express';
 import { supabase } from '../server.js';
+import { isWindowOpen, sendFreeText, sendTemplate } from '../lib/whatsappSender.js';
+import { accessibleProjects, projectForUser } from '../lib/projectAccess.js';
 
 const router = express.Router();
+const PROYECTO_COLS = 'id, nombre, user_id, ycloud_api_key, ycloud_phone_number';
 
 // Encode/decode composite conversation ID: "{projectId}~{canal}~{visitorId}"
 // Tilde is URL-safe and never appears in UUIDs, canal names, or visitor IDs.
@@ -18,56 +21,9 @@ function decodeId(id) {
   };
 }
 
-async function ownedProject(proyecto_id, userId) {
-  const { data } = await supabase
-    .from('proyectos')
-    .select('id, nombre, user_id, ycloud_api_key, ycloud_phone_number')
-    .eq('id', proyecto_id)
-    .single();
-  if (!data || data.user_id !== userId) return null;
-  return data;
-}
-
-async function getYCloudKey(proyecto) {
-  if (proyecto.ycloud_api_key) return proyecto.ycloud_api_key;
-  const { data: cfg } = await supabase
-    .from('config_plataforma').select('ycloud_api_key').eq('clave', 'plataforma').single();
-  return cfg?.ycloud_api_key || null;
-}
-
-async function sendYCloud(to, text, apiKey, fromNumber) {
-  try {
-    const res = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
-      method: 'POST',
-      headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: fromNumber, to, type: 'text', text: { body: text } }),
-    });
-    return res.ok;
-  } catch (_) { return false; }
-}
-
-/** Envía una plantilla HSM aprobada. A diferencia del texto libre, funciona fuera de la ventana de 24h. */
-async function sendYCloudTemplate(to, { name, language, valores = [] }, apiKey, fromNumber) {
-  try {
-    const components = valores.length
-      ? [{ type: 'body', parameters: valores.map(v => ({ type: 'text', text: String(v) })) }]
-      : [];
-    const res = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
-      method: 'POST',
-      headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: fromNumber, to, type: 'template',
-        template: { name, language: { code: language }, components },
-      }),
-    });
-    return res.ok;
-  } catch (_) { return false; }
-}
-
-/** Sustituye {{1}}, {{2}}… por los valores dados, para guardar el texto real en el historial. */
-function renderPlantilla(texto, valores = []) {
-  return String(texto).replace(/\{\{(\d+)\}\}/g, (m, n) => valores[parseInt(n, 10) - 1] ?? m);
-}
+// Aquí había un getYCloudKey/sendYCloud propios, usados solo por el aviso automático de
+// "un agente humano se ha unido" que se ha retirado. El envío real vive en lib/whatsappSender.js
+// (una sola implementación, con comprobación de la ventana de 24h).
 
 /**
  * Resuelve el contacto real detrás de una o varias conversaciones de voz.
@@ -76,7 +32,6 @@ function renderPlantilla(texto, valores = []) {
  * teléfono ni nombre. El dato sí existe, pero en la capa de identidad omnicanal:
  * customer_identities(identity_type='retell_call_id') → customers.
  *
- * @param {string[]} callIds
  * @returns {Promise<Object>} mapa call_id → { nombre, telefono, email, customer_id }
  */
 async function resolverContactosDeVoz(proyectoId, callIds) {
@@ -112,10 +67,9 @@ async function resolverContactosDeVoz(proyectoId, callIds) {
   return mapa;
 }
 
-// GET /api/conversations/customer/:customerId — ficha 360 del contacto
-// Devuelve sus conversaciones SEPARADAS por canal (no fusionadas): mezclarlas pierde el
-// hilo de cada canal, que es justo lo que se quiere revisar.
-// Se declara antes que las rutas /:id/... para que no las capture.
+// GET /api/conversations/customer/:customerId — ficha 360 del contacto.
+// Devuelve las conversaciones SEPARADAS por canal: mezclarlas pierde el hilo de cada uno.
+// Va antes que las rutas /:id/... para que no las capture.
 router.get('/customer/:customerId', async (req, res) => {
   try {
     const { data: customer } = await supabase
@@ -126,7 +80,7 @@ router.get('/customer/:customerId', async (req, res) => {
       .then(r => r, () => ({ data: null }));
     if (!customer) return res.status(404).json({ error: 'Contacto no encontrado' });
 
-    const proyecto = await ownedProject(customer.proyecto_id, req.user.id);
+    const proyecto = await projectForUser(customer.proyecto_id, req.user.id, { columns: PROYECTO_COLS });
     if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
 
     const [{ data: convs }, { data: msgs }, { data: identidades }] = await Promise.all([
@@ -150,18 +104,12 @@ router.get('/customer/:customerId', async (req, res) => {
     const porConversacion = {};
     for (const m of (msgs || [])) (porConversacion[m.conversation_id] ||= []).push(m);
 
-    // Agrupa por canal manteniendo cada hilo separado dentro del canal.
     const canales = {};
     for (const c of (convs || [])) {
       (canales[c.channel] ||= []).push({ ...c, mensajes: porConversacion[c.id] || [] });
     }
 
-    res.json({
-      customer,
-      identidades: identidades || [],
-      canales,
-      proyecto_nombre: proyecto.nombre,
-    });
+    res.json({ customer, identidades: identidades || [], canales, proyecto_nombre: proyecto.nombre });
   } catch (err) {
     console.error('[conversations] customer 360 error:', err.message);
     res.status(500).json({ error: err.message });
@@ -174,15 +122,13 @@ router.get('/', async (req, res) => {
     const { projectId, canal: canalFilter = 'todos', page = '1', limit = '20' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // Fetch user's projects
-    let pQuery = supabase.from('proyectos').select('id, nombre, user_id').eq('user_id', req.user.id);
-    if (projectId) pQuery = pQuery.eq('id', projectId);
-    const { data: proyectos, error: pErr } = await pQuery;
-    if (pErr) throw pErr;
-    if (!proyectos?.length) return res.json({ conversations: [], total: 0 });
+    // Proyectos propios + aquellos donde el usuario es operadora activa
+    const { all: proyectos } = await accessibleProjects(req.user.id);
+    const filtrados = projectId ? proyectos.filter(p => p.id === projectId) : proyectos;
+    if (!filtrados.length) return res.json({ conversations: [], total: 0 });
 
-    const proyectoIds = proyectos.map(p => p.id);
-    const proyectoMap = Object.fromEntries(proyectos.map(p => [p.id, p]));
+    const proyectoIds = filtrados.map(p => p.id);
+    const proyectoMap = Object.fromEntries(filtrados.map(p => [p.id, p]));
 
     // Get recent messages to derive conversation list
     let mQuery = supabase
@@ -229,8 +175,8 @@ router.get('/', async (req, res) => {
 
     const pagina = all.slice(offset, offset + parseInt(limit));
 
-    // Las conversaciones de voz se identifican por call_id: resolvemos el contacto real
-    // en lote para no mostrar "call_6a0fbbde…" en la lista.
+    // Las conversaciones de voz se identifican por call_id: resolvemos el contacto real en
+    // lote para no mostrar "call_6a0fbbde…" en la lista.
     const contactosVoz = {};
     const vozPorProyecto = {};
     for (const c of pagina) {
@@ -266,7 +212,7 @@ router.get('/:id/messages', async (req, res) => {
     const { page = '1', limit = '50' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const proyecto = await ownedProject(proyecto_id, req.user.id);
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
     if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
 
     const { data: messages, error } = await supabase
@@ -290,20 +236,17 @@ router.get('/:id/messages', async (req, res) => {
       .maybeSingle()
       .then(r => r, () => ({ data: null }));
 
-    // Ventana de 24h de WhatsApp: se mide desde el último mensaje ENTRANTE del cliente
-    // (role 'user'). Enviar una plantilla NO abre la ventana — solo la respuesta del cliente.
+    // Último mensaje ENTRANTE: es lo que marca la ventana de 24h en el composer del inbox.
     const { data: ultimoEntrante } = await supabase
       .from('conversaciones_chat')
       .select('created_at')
-      .eq('proyecto_id', proyecto_id)
-      .eq('visitor_id', visitor_id)
-      .eq('canal', canal)
+      .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
       .eq('role', 'user')
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(1).maybeSingle()
       .then(r => r, () => ({ data: null }));
 
+    // En una llamada el visitor_id es el call_id de Retell, opaco: resolvemos quién llamó.
     const contacto = canal === 'phone'
       ? (await resolverContactosDeVoz(proyecto_id, [visitor_id]).catch(() => ({})))[visitor_id] || null
       : null;
@@ -327,7 +270,7 @@ router.patch('/:id/takeover', async (req, res) => {
     const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
     const { human_takeover } = req.body;
 
-    const proyecto = await ownedProject(proyecto_id, req.user.id);
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
     if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
 
     const now = new Date().toISOString();
@@ -343,29 +286,11 @@ router.patch('/:id/takeover', async (req, res) => {
       .single();
     if (uErr) throw uErr;
 
-    // Aviso al cliente de que entra un agente humano — solo si la ventana de 24h sigue
-    // abierta. Fuera de ella es texto libre: YCloud lo acepta, Meta lo descarta (131047)
-    // y nadie se entera. Además, en una conversación abierta desde una llamada este aviso
-    // sería el primer mensaje que recibe el cliente, sin contexto ninguno.
-    if (human_takeover && canal === 'whatsapp') {
-      const { data: ultimoEntrante } = await supabase
-        .from('conversaciones_chat')
-        .select('created_at')
-        .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
-        .eq('role', 'user')
-        .order('created_at', { ascending: false })
-        .limit(1).maybeSingle()
-        .then(r => r, () => ({ data: null }));
-      const ventanaAbierta = ultimoEntrante?.created_at
-        && (Date.now() - new Date(ultimoEntrante.created_at).getTime()) < 24 * 60 * 60 * 1000;
-
-      if (ventanaAbierta) {
-        const apiKey = await getYCloudKey(proyecto);
-        if (apiKey && proyecto.ycloud_phone_number) {
-          await sendYCloud(visitor_id, 'Un agente humano se ha unido a la conversación.', apiKey, proyecto.ycloud_phone_number);
-        }
-      }
-    }
+    // Antes se enviaba automáticamente "Un agente humano se ha unido a la conversación" al
+    // tomar el control. Retirado a propósito: en una bandeja compartida con varias operadoras
+    // entrando y saliendo, eso es ruido para el cliente. Además iba como texto libre sin
+    // comprobar la ventana de 24h, así que en conversaciones antiguas fallaba en silencio.
+    // La operadora escribe cuando quiera; el cliente lo nota por el propio mensaje.
 
     res.json({ ok: true, human_takeover: updated.human_takeover });
   } catch (err) {
@@ -374,19 +299,14 @@ router.patch('/:id/takeover', async (req, res) => {
   }
 });
 
-// POST /api/conversations/:id/message
-//   body: { text }                                        → texto libre (solo dentro de 24h)
-//   body: { plantilla: { name, language, valores: [] } }   → plantilla HSM (siempre válida)
+// POST /api/conversations/:id/message  body: { text: string }
 router.post('/:id/message', async (req, res) => {
   try {
     const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
-    const { text, plantilla } = req.body;
-    if (!plantilla && !text?.trim()) return res.status(400).json({ error: 'text required' });
-    if (plantilla && (!plantilla.name || !plantilla.language)) {
-      return res.status(400).json({ error: 'La plantilla necesita name y language' });
-    }
+    const { text } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'text required' });
 
-    const proyecto = await ownedProject(proyecto_id, req.user.id);
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
     if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
 
     // Verify human takeover is active
@@ -400,48 +320,23 @@ router.post('/:id/message', async (req, res) => {
       .then(r => r, () => ({ data: null }));
     if (!st?.human_takeover) return res.status(400).json({ error: 'Human takeover not active for this conversation' });
 
-    // El texto libre solo llega si la ventana de 24h sigue abierta. Se valida en servidor
-    // además de en la UI: si no, YCloud acepta el envío y Meta lo descarta después (131047),
-    // y el agente cree que ha contestado cuando en realidad no ha salido nada.
-    if (!plantilla && canal === 'whatsapp') {
-      const { data: ultimoEntrante } = await supabase
-        .from('conversaciones_chat')
-        .select('created_at')
-        .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
-        .eq('role', 'user')
-        .order('created_at', { ascending: false })
-        .limit(1).maybeSingle()
-        .then(r => r, () => ({ data: null }));
-      const abierta = ultimoEntrante?.created_at
-        && (Date.now() - new Date(ultimoEntrante.created_at).getTime()) < 24 * 60 * 60 * 1000;
-      if (!abierta) {
-        return res.status(409).json({
-          error: 'ventana_cerrada',
-          mensaje: 'Han pasado más de 24 h desde el último mensaje del cliente. Solo puedes enviar una plantilla aprobada.',
-        });
-      }
-    }
-
-    const contenido = plantilla
-      ? renderPlantilla(plantilla.contenido || plantilla.name, plantilla.valores)
-      : text;
-
-    // Send via YCloud for WhatsApp
+    // Texto libre solo si el cliente escribió en las últimas 24h — si no, Meta lo rechaza.
     let sent = false;
     if (canal === 'whatsapp') {
-      const apiKey = await getYCloudKey(proyecto);
-      if (apiKey && proyecto.ycloud_phone_number) {
-        sent = plantilla
-          ? await sendYCloudTemplate(visitor_id, {
-              name: plantilla.name, language: plantilla.language, valores: plantilla.valores,
-            }, apiKey, proyecto.ycloud_phone_number)
-          : await sendYCloud(visitor_id, contenido, apiKey, proyecto.ycloud_phone_number);
+      if (!(await isWindowOpen(proyecto_id, visitor_id))) {
+        return res.status(409).json({ error: 'ventana_cerrada', mensaje: 'Han pasado más de 24h desde el último mensaje del cliente. Usa una plantilla para reabrir la conversación.' });
+      }
+      try {
+        await sendFreeText(proyecto, visitor_id, text);
+        sent = true;
+      } catch (err) {
+        return res.status(502).json({ error: err.message });
       }
     }
 
     // Save to message history
     await supabase.from('conversaciones_chat').insert({
-      proyecto_id, visitor_id, canal, role: 'assistant', content: contenido,
+      proyecto_id, visitor_id, canal, role: 'assistant', content: text,
     }).then(null, () => {});
 
     // Update last_message_at
@@ -457,86 +352,89 @@ router.post('/:id/message', async (req, res) => {
   }
 });
 
-// ── Notas internas de la conversación ──────────────────────────────────────
-// Append-only: cada nota es una fila con autor y hora. Ver 012_conversacion_notas.sql.
+// GET /api/conversations/:id/ventana — ¿se puede mandar texto libre o hace falta plantilla?
+router.get('/:id/ventana', async (req, res) => {
+  try {
+    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+    if (canal !== 'whatsapp') return res.json({ open: true }); // web/telegram no tienen ventana de 24h
+
+    const open = await isWindowOpen(proyecto_id, visitor_id);
+    res.json({ open });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/conversations/:id/plantilla — reabrir con una plantilla aprobada de Meta
+router.post('/:id/plantilla', async (req, res) => {
+  try {
+    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
+    const { name, language, params, bodyPreview } = req.body;
+    if (!name) return res.status(400).json({ error: 'name requerido' });
+    if (canal !== 'whatsapp') return res.status(400).json({ error: 'Solo aplica a conversaciones de WhatsApp' });
+
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    const { data: st } = await supabase
+      .from('conversaciones')
+      .select('human_takeover')
+      .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
+      .maybeSingle().then(r => r, () => ({ data: null }));
+    if (!st?.human_takeover) return res.status(400).json({ error: 'Human takeover not active for this conversation' });
+
+    await sendTemplate(proyecto, visitor_id, {
+      name, language: language || 'es', params: params || [], bodyText: bodyPreview,
+    });
+
+    await supabase.from('conversaciones_chat').insert({
+      proyecto_id, visitor_id, canal, role: 'assistant', content: bodyPreview || `[plantilla: ${name}]`,
+    }).then(null, () => {});
+    await supabase.from('conversaciones')
+      .update({ last_message_at: new Date().toISOString() })
+      .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
+      .then(null, () => {});
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[conversations] send template error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── Notas internas de la conversación (visibles solo para el equipo, nunca al cliente) ──
 
 // GET /api/conversations/:id/notas
-router.get('/:id/notas', async (req, res) => {
-  try {
-    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
-    const proyecto = await ownedProject(proyecto_id, req.user.id);
-    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
-
-    const { data, error } = await supabase
-      .from('conversacion_notas')
-      .select('id, contenido, autor_id, autor_nombre, created_at')
-      .eq('proyecto_id', proyecto_id)
-      .eq('visitor_id', visitor_id)
-      .eq('canal', canal)
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if (error) throw error;
-
-    res.json({ notas: data || [] });
-  } catch (err) {
-    console.error('[conversations] notas list error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/conversations/:id/notas  body: { contenido: string }
-router.post('/:id/notas', async (req, res) => {
-  try {
-    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
-    const contenido = (req.body?.contenido || '').trim();
-    if (!contenido) return res.status(400).json({ error: 'El contenido de la nota no puede estar vacío' });
-
-    const proyecto = await ownedProject(proyecto_id, req.user.id);
-    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
-
-    const autorNombre = req.user.user_metadata?.full_name
-      || req.user.user_metadata?.name
-      || req.user.email
-      || 'Agente';
-
-    const { data, error } = await supabase
-      .from('conversacion_notas')
-      .insert({
-        proyecto_id, visitor_id, canal,
-        autor_id: req.user.id,
-        autor_nombre: autorNombre,
-        contenido,
-      })
-      .select('id, contenido, autor_id, autor_nombre, created_at')
-      .single();
-    if (error) throw error;
-
-    res.json({ nota: data });
-  } catch (err) {
-    console.error('[conversations] nota create error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Plantillas disponibles para el composer ────────────────────────────────
 // Une dos cosas que NO son intercambiables:
-//   · HSM  → plantillas aprobadas por Meta. Se pueden enviar SIEMPRE, también fuera de
-//            la ventana de 24h. Vienen de YCloud con la key del proyecto (server-side).
-//   · rápida → respuestas predefinidas locales (lead_templates). Texto normal, así que
-//            SOLO se pueden enviar dentro de la ventana de 24h.
+//   · hsm    → aprobadas por Meta. Se envían SIEMPRE, también fuera de la ventana de 24h.
+//   · rapida → respuestas predefinidas locales (lead_templates). Son texto normal, así que
+//              SOLO valen dentro de la ventana.
 const HSM_CACHE = new Map();          // proyecto_id → { ts, items }
-const HSM_CACHE_TTL = 10 * 60 * 1000; // 10 min
+const HSM_CACHE_TTL = 10 * 60 * 1000;
 
 async function fetchPlantillasHsm(proyecto) {
-  if (!proyecto.ycloud_waba_id) return [];
+  const { data: full } = await supabase
+    .from('proyectos').select('id, ycloud_api_key, ycloud_waba_id').eq('id', proyecto.id).single()
+    .then(r => r, () => ({ data: null }));
+  if (!full?.ycloud_waba_id) return [];
+
   const cached = HSM_CACHE.get(proyecto.id);
   if (cached && Date.now() - cached.ts < HSM_CACHE_TTL) return cached.items;
 
-  const apiKey = await getYCloudKey(proyecto);
+  let apiKey = full.ycloud_api_key;
+  if (!apiKey) {
+    const { data: cfg } = await supabase
+      .from('config_plataforma').select('ycloud_api_key').eq('clave', 'plataforma').single()
+      .then(r => r, () => ({ data: null }));
+    apiKey = cfg?.ycloud_api_key;
+  }
   if (!apiKey) return [];
 
   const ycRes = await fetch(
-    `https://api.ycloud.com/v2/whatsapp/templates?wabaId=${encodeURIComponent(proyecto.ycloud_waba_id)}&limit=100`,
+    `https://api.ycloud.com/v2/whatsapp/templates?wabaId=${encodeURIComponent(full.ycloud_waba_id)}&limit=100`,
     { headers: { 'X-API-Key': apiKey } }
   );
   if (!ycRes.ok) return cached?.items || [];
@@ -547,18 +445,12 @@ async function fetchPlantillasHsm(proyecto) {
     .map(t => {
       const body = (t.components || []).find(c => String(c.type).toUpperCase() === 'BODY');
       const texto = body?.text || '';
-      // Variables posicionales {{1}}, {{2}}… en orden de aparición, sin repetidos
       const variables = [...new Set((texto.match(/\{\{\d+\}\}/g) || []))]
-        .map(v => parseInt(v.replace(/\D/g, ''), 10))
-        .sort((a, b) => a - b);
+        .map(v => parseInt(v.replace(/\D/g, ''), 10)).sort((a, b) => a - b);
       return {
-        id: `hsm:${t.name}:${t.language}`,
-        tipo: 'hsm',
-        nombre: t.name,
-        contenido: texto,
-        variables,
-        wa_template_name: t.name,
-        wa_language: t.language,
+        id: `hsm:${t.name}:${t.language}`, tipo: 'hsm', nombre: t.name,
+        contenido: texto, variables,
+        wa_template_name: t.name, wa_language: t.language,
       };
     });
 
@@ -569,35 +461,83 @@ async function fetchPlantillasHsm(proyecto) {
 // GET /api/conversations/:id/plantillas
 router.get('/:id/plantillas', async (req, res) => {
   try {
-    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
-    const proyecto = await ownedProject(proyecto_id, req.user.id);
+    const { proyecto_id, canal } = decodeId(req.params.id);
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
     if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
 
-    // Las HSM solo aplican a WhatsApp; en web/telegram únicamente respuestas rápidas.
     const [hsm, rapidasRes] = await Promise.all([
-      canal === 'whatsapp'
-        ? fetchPlantillasHsm(proyecto).catch(() => [])
-        : Promise.resolve([]),
-      supabase
-        .from('lead_templates')
+      canal === 'whatsapp' ? fetchPlantillasHsm(proyecto).catch(() => []) : Promise.resolve([]),
+      supabase.from('lead_templates')
         .select('id, name, content, category')
-        .eq('user_id', req.user.id)
-        .order('name')
+        .eq('user_id', req.user.id).order('name')
         .then(r => r, () => ({ data: [] })),
     ]);
 
     const rapidas = (rapidasRes.data || []).map(t => ({
-      id: `rapida:${t.id}`,
-      tipo: 'rapida',
-      nombre: t.name,
-      contenido: t.content,
-      variables: [],
-      categoria: t.category || 'general',
+      id: `rapida:${t.id}`, tipo: 'rapida', nombre: t.name,
+      contenido: t.content, variables: [], categoria: t.category || 'general',
     }));
 
     res.json({ plantillas: [...hsm, ...rapidas], hsm_disponibles: hsm.length });
   } catch (err) {
     console.error('[conversations] plantillas error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/notas', async (req, res) => {
+  try {
+    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    const { data, error } = await supabase
+      .from('conversacion_notas')
+      .select('id, contenido, autor_nombre, created_at')
+      .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ notas: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/conversations/:id/notas
+router.post('/:id/notas', async (req, res) => {
+  try {
+    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
+    const { contenido } = req.body;
+    if (!contenido?.trim()) return res.status(400).json({ error: 'contenido requerido' });
+
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    const autorNombre = req.user.user_metadata?.full_name || req.user.email || 'Operador';
+    const { data, error } = await supabase
+      .from('conversacion_notas')
+      .insert({ proyecto_id, canal, visitor_id, contenido: contenido.trim(), autor_id: req.user.id, autor_nombre: autorNombre })
+      .select('id, contenido, autor_nombre, created_at')
+      .single();
+    if (error) throw error;
+    res.json({ nota: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/conversations/:id/notas/:notaId
+router.delete('/:id/notas/:notaId', async (req, res) => {
+  try {
+    const { proyecto_id } = decodeId(req.params.id);
+    const proyecto = await projectForUser(proyecto_id, req.user.id, { columns: PROYECTO_COLS });
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    const { error } = await supabase.from('conversacion_notas').delete()
+      .eq('id', req.params.notaId).eq('proyecto_id', proyecto_id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

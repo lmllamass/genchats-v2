@@ -35,3 +35,8 @@ dist-ssr
 
 .vite
 node_modules.nosync
+
+# cualquier variante de node_modules (nosync, old-evicted, "node_modules 2"…): sin esto,
+# un `git add -A` mete decenas de miles de ficheros en el índice y git se vuelve inusable
+node_modules*
+node_modules 2/

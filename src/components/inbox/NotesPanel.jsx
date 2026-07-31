@@ -37,7 +37,7 @@ export default function NotesPanel({ convId }) {
     if (!limpio || estado === "guardando") return;
     setEstado("guardando");
     try {
-      const { nota } = await api.createConversationNota(convId, limpio);
+      const { nota } = await api.addConversationNota(convId, limpio);
       setNotas(prev => [nota, ...prev]);
       setTexto("");
       setEstado("guardada");

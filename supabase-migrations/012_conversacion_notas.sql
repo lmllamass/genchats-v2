@@ -1,32 +1,33 @@
--- 012_conversacion_notas.sql
--- Notas internas de una conversación del inbox.
+-- Migration 012: notas internas por conversación (nunca visibles para el cliente).
 --
--- Append-only a propósito: con varios agentes atendiendo, un campo de texto único hace que
--- el segundo agente pise lo que escribió el primero sin enterarse. Apilando notas queda
--- historial, autor y hora.
+-- Es un histórico, no un campo único que se pisen entre sí varias operadoras: cada nota
+-- guarda quién la escribió y cuándo, para que quien abra el chat después tenga contexto.
 --
--- Identidad de conversación = (proyecto_id, visitor_id, canal), NO conversaciones.id:
--- la fila de `conversaciones` solo se crea al activar el takeover humano, así que una
--- conversación que nunca se ha intervenido no tiene id al que referenciar.
+-- Idempotente: se puede ejecutar varias veces sin error.
 
 CREATE TABLE IF NOT EXISTS conversacion_notas (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  proyecto_id  UUID NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
-  visitor_id   TEXT NOT NULL,
-  canal        TEXT NOT NULL,
-  autor_id     UUID,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- La conversación se identifica igual que en el resto del código: proyecto + canal + visitor
+  -- (no hay tabla de conversaciones con PK propia para todos los canales).
+  proyecto_id UUID NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+  canal TEXT NOT NULL,
+  visitor_id TEXT NOT NULL,
+
+  -- Autor: si el usuario se borra, la nota se conserva con el nombre ya guardado.
+  autor_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   autor_nombre TEXT,
-  contenido    TEXT NOT NULL CHECK (length(trim(contenido)) > 0),
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  contenido TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_conversacion_notas_conv
-  ON conversacion_notas (proyecto_id, visitor_id, canal, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversacion_notas_lookup
+  ON conversacion_notas(proyecto_id, canal, visitor_id, created_at DESC);
 
+-- Solo service_role: el frontend nunca lee esta tabla directamente, todo pasa por el backend
+-- (/api/conversations/:id/notas), que valida que el proyecto sea del usuario autenticado.
 ALTER TABLE conversacion_notas ENABLE ROW LEVEL SECURITY;
 
--- Solo service_role: el frontend nunca lee esta tabla directamente, siempre pasa por el
--- backend, que valida que el proyecto sea del usuario autenticado.
 DROP POLICY IF EXISTS "service_role_conversacion_notas" ON conversacion_notas;
 CREATE POLICY "service_role_conversacion_notas" ON conversacion_notas
   FOR ALL TO service_role USING (true) WITH CHECK (true);
