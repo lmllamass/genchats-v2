@@ -5,7 +5,7 @@ import { Bot, User, Send, Loader2, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import moment from "moment";
+import MessageList from "@/components/inbox/MessageList";
 
 const CANAL_LABEL = { whatsapp: "WhatsApp", web: "Web", telegram: "Telegram" };
 
@@ -15,7 +15,6 @@ export default function ConversacionMessages({ conversation, onTakeoverChange })
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [toggling, setToggling] = useState(false);
-  const messagesEndRef = useRef(null);
   const intervalRef = useRef(null);
 
   const fetchMessages = useCallback(async (quiet = false) => {
@@ -48,9 +47,8 @@ export default function ConversacionMessages({ conversation, onTakeoverChange })
     return () => clearInterval(intervalRef.current);
   }, [fetchMessages]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // Nada de auto-scroll aquí: lo gestiona MessageList/useAutoScroll, que respeta al usuario
+  // cuando está leyendo hacia arriba en vez de arrastrarlo al fondo en cada poll.
 
   const handleToggle = async () => {
     if (!conversation) return;
@@ -141,29 +139,11 @@ export default function ConversacionMessages({ conversation, onTakeoverChange })
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-        {loading ? (
-          <div className="flex items-center justify-center h-24">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : messages.length === 0 ? (
-          <p className="text-center text-xs text-muted-foreground py-8">Sin mensajes</p>
-        ) : (
-          messages.map((msg, i) => (
-            <div key={msg.id || i} className={`flex ${msg.role === "user" ? "justify-start" : "justify-end"}`}>
-              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-secondary/70 text-foreground rounded-tl-sm"
-                  : "bg-primary/20 text-foreground border border-primary/30 rounded-tr-sm"
-              }`}>
-                <p className="whitespace-pre-wrap">{msg.content}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5 text-right">{moment(msg.created_at).format("HH:mm")}</p>
-              </div>
-            </div>
-          ))
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+      <MessageList
+        messages={messages}
+        loading={loading}
+        convKey={conversation ? `${conversation.proyecto_id}~${conversation.canal}~${conversation.visitor_id}` : null}
+      />
 
       {/* Input — only when human takeover */}
       {conversation.human_takeover && (

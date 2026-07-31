@@ -154,6 +154,15 @@ export const api = {
     apiFetchAuth(`/api/conversations/${convId}/takeover`, { method: 'PATCH', body: JSON.stringify({ human_takeover }) }),
   sendConversationMessage: (convId, text) =>
     apiFetchAuth(`/api/conversations/${convId}/message`, { method: 'POST', body: JSON.stringify({ text }) }),
+  /** Envía una plantilla HSM aprobada — funciona también fuera de la ventana de 24h. */
+  sendConversationTemplate: (convId, plantilla) =>
+    apiFetchAuth(`/api/conversations/${convId}/message`, { method: 'POST', body: JSON.stringify({ plantilla }) }),
+  listConversationPlantillas: (convId) =>
+    apiFetchAuth(`/api/conversations/${convId}/plantillas`),
+  listConversationNotas: (convId) =>
+    apiFetchAuth(`/api/conversations/${convId}/notas`),
+  createConversationNota: (convId, contenido) =>
+    apiFetchAuth(`/api/conversations/${convId}/notas`, { method: 'POST', body: JSON.stringify({ contenido }) }),
 
   // Leads CRM
   listLeads: (params = {}) => {

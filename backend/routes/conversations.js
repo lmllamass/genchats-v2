@@ -46,6 +46,29 @@ async function sendYCloud(to, text, apiKey, fromNumber) {
   } catch (_) { return false; }
 }
 
+/** Envía una plantilla HSM aprobada. A diferencia del texto libre, funciona fuera de la ventana de 24h. */
+async function sendYCloudTemplate(to, { name, language, valores = [] }, apiKey, fromNumber) {
+  try {
+    const components = valores.length
+      ? [{ type: 'body', parameters: valores.map(v => ({ type: 'text', text: String(v) })) }]
+      : [];
+    const res = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
+      method: 'POST',
+      headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: fromNumber, to, type: 'template',
+        template: { name, language: { code: language }, components },
+      }),
+    });
+    return res.ok;
+  } catch (_) { return false; }
+}
+
+/** Sustituye {{1}}, {{2}}… por los valores dados, para guardar el texto real en el historial. */
+function renderPlantilla(texto, valores = []) {
+  return String(texto).replace(/\{\{(\d+)\}\}/g, (m, n) => valores[parseInt(n, 10) - 1] ?? m);
+}
+
 // GET /api/conversations?projectId=X&canal=todos&page=1&limit=20
 router.get('/', async (req, res) => {
   try {
@@ -153,9 +176,24 @@ router.get('/:id/messages', async (req, res) => {
       .maybeSingle()
       .then(r => r, () => ({ data: null }));
 
+    // Ventana de 24h de WhatsApp: se mide desde el último mensaje ENTRANTE del cliente
+    // (role 'user'). Enviar una plantilla NO abre la ventana — solo la respuesta del cliente.
+    const { data: ultimoEntrante } = await supabase
+      .from('conversaciones_chat')
+      .select('created_at')
+      .eq('proyecto_id', proyecto_id)
+      .eq('visitor_id', visitor_id)
+      .eq('canal', canal)
+      .eq('role', 'user')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(r => r, () => ({ data: null }));
+
     res.json({
       messages: messages || [],
       human_takeover: st?.human_takeover || false,
+      ultimo_entrante_at: ultimoEntrante?.created_at || null,
       proyecto_id, visitor_id, canal,
     });
   } catch (err) {
@@ -201,12 +239,17 @@ router.patch('/:id/takeover', async (req, res) => {
   }
 });
 
-// POST /api/conversations/:id/message  body: { text: string }
+// POST /api/conversations/:id/message
+//   body: { text }                                        → texto libre (solo dentro de 24h)
+//   body: { plantilla: { name, language, valores: [] } }   → plantilla HSM (siempre válida)
 router.post('/:id/message', async (req, res) => {
   try {
     const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
-    const { text } = req.body;
-    if (!text?.trim()) return res.status(400).json({ error: 'text required' });
+    const { text, plantilla } = req.body;
+    if (!plantilla && !text?.trim()) return res.status(400).json({ error: 'text required' });
+    if (plantilla && (!plantilla.name || !plantilla.language)) {
+      return res.status(400).json({ error: 'La plantilla necesita name y language' });
+    }
 
     const proyecto = await ownedProject(proyecto_id, req.user.id);
     if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
@@ -222,18 +265,48 @@ router.post('/:id/message', async (req, res) => {
       .then(r => r, () => ({ data: null }));
     if (!st?.human_takeover) return res.status(400).json({ error: 'Human takeover not active for this conversation' });
 
+    // El texto libre solo llega si la ventana de 24h sigue abierta. Se valida en servidor
+    // además de en la UI: si no, YCloud acepta el envío y Meta lo descarta después (131047),
+    // y el agente cree que ha contestado cuando en realidad no ha salido nada.
+    if (!plantilla && canal === 'whatsapp') {
+      const { data: ultimoEntrante } = await supabase
+        .from('conversaciones_chat')
+        .select('created_at')
+        .eq('proyecto_id', proyecto_id).eq('visitor_id', visitor_id).eq('canal', canal)
+        .eq('role', 'user')
+        .order('created_at', { ascending: false })
+        .limit(1).maybeSingle()
+        .then(r => r, () => ({ data: null }));
+      const abierta = ultimoEntrante?.created_at
+        && (Date.now() - new Date(ultimoEntrante.created_at).getTime()) < 24 * 60 * 60 * 1000;
+      if (!abierta) {
+        return res.status(409).json({
+          error: 'ventana_cerrada',
+          mensaje: 'Han pasado más de 24 h desde el último mensaje del cliente. Solo puedes enviar una plantilla aprobada.',
+        });
+      }
+    }
+
+    const contenido = plantilla
+      ? renderPlantilla(plantilla.contenido || plantilla.name, plantilla.valores)
+      : text;
+
     // Send via YCloud for WhatsApp
     let sent = false;
     if (canal === 'whatsapp') {
       const apiKey = await getYCloudKey(proyecto);
       if (apiKey && proyecto.ycloud_phone_number) {
-        sent = await sendYCloud(visitor_id, text, apiKey, proyecto.ycloud_phone_number);
+        sent = plantilla
+          ? await sendYCloudTemplate(visitor_id, {
+              name: plantilla.name, language: plantilla.language, valores: plantilla.valores,
+            }, apiKey, proyecto.ycloud_phone_number)
+          : await sendYCloud(visitor_id, contenido, apiKey, proyecto.ycloud_phone_number);
       }
     }
 
     // Save to message history
     await supabase.from('conversaciones_chat').insert({
-      proyecto_id, visitor_id, canal, role: 'assistant', content: text,
+      proyecto_id, visitor_id, canal, role: 'assistant', content: contenido,
     }).then(null, () => {});
 
     // Update last_message_at
@@ -245,6 +318,151 @@ router.post('/:id/message', async (req, res) => {
     res.json({ ok: true, sent });
   } catch (err) {
     console.error('[conversations] send message error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Notas internas de la conversación ──────────────────────────────────────
+// Append-only: cada nota es una fila con autor y hora. Ver 012_conversacion_notas.sql.
+
+// GET /api/conversations/:id/notas
+router.get('/:id/notas', async (req, res) => {
+  try {
+    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
+    const proyecto = await ownedProject(proyecto_id, req.user.id);
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    const { data, error } = await supabase
+      .from('conversacion_notas')
+      .select('id, contenido, autor_id, autor_nombre, created_at')
+      .eq('proyecto_id', proyecto_id)
+      .eq('visitor_id', visitor_id)
+      .eq('canal', canal)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) throw error;
+
+    res.json({ notas: data || [] });
+  } catch (err) {
+    console.error('[conversations] notas list error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/conversations/:id/notas  body: { contenido: string }
+router.post('/:id/notas', async (req, res) => {
+  try {
+    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
+    const contenido = (req.body?.contenido || '').trim();
+    if (!contenido) return res.status(400).json({ error: 'El contenido de la nota no puede estar vacío' });
+
+    const proyecto = await ownedProject(proyecto_id, req.user.id);
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    const autorNombre = req.user.user_metadata?.full_name
+      || req.user.user_metadata?.name
+      || req.user.email
+      || 'Agente';
+
+    const { data, error } = await supabase
+      .from('conversacion_notas')
+      .insert({
+        proyecto_id, visitor_id, canal,
+        autor_id: req.user.id,
+        autor_nombre: autorNombre,
+        contenido,
+      })
+      .select('id, contenido, autor_id, autor_nombre, created_at')
+      .single();
+    if (error) throw error;
+
+    res.json({ nota: data });
+  } catch (err) {
+    console.error('[conversations] nota create error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Plantillas disponibles para el composer ────────────────────────────────
+// Une dos cosas que NO son intercambiables:
+//   · HSM  → plantillas aprobadas por Meta. Se pueden enviar SIEMPRE, también fuera de
+//            la ventana de 24h. Vienen de YCloud con la key del proyecto (server-side).
+//   · rápida → respuestas predefinidas locales (lead_templates). Texto normal, así que
+//            SOLO se pueden enviar dentro de la ventana de 24h.
+const HSM_CACHE = new Map();          // proyecto_id → { ts, items }
+const HSM_CACHE_TTL = 10 * 60 * 1000; // 10 min
+
+async function fetchPlantillasHsm(proyecto) {
+  if (!proyecto.ycloud_waba_id) return [];
+  const cached = HSM_CACHE.get(proyecto.id);
+  if (cached && Date.now() - cached.ts < HSM_CACHE_TTL) return cached.items;
+
+  const apiKey = await getYCloudKey(proyecto);
+  if (!apiKey) return [];
+
+  const ycRes = await fetch(
+    `https://api.ycloud.com/v2/whatsapp/templates?wabaId=${encodeURIComponent(proyecto.ycloud_waba_id)}&limit=100`,
+    { headers: { 'X-API-Key': apiKey } }
+  );
+  if (!ycRes.ok) return cached?.items || [];
+  const data = await ycRes.json();
+
+  const items = (data.items || [])
+    .filter(t => String(t.status).toUpperCase() === 'APPROVED')
+    .map(t => {
+      const body = (t.components || []).find(c => String(c.type).toUpperCase() === 'BODY');
+      const texto = body?.text || '';
+      // Variables posicionales {{1}}, {{2}}… en orden de aparición, sin repetidos
+      const variables = [...new Set((texto.match(/\{\{\d+\}\}/g) || []))]
+        .map(v => parseInt(v.replace(/\D/g, ''), 10))
+        .sort((a, b) => a - b);
+      return {
+        id: `hsm:${t.name}:${t.language}`,
+        tipo: 'hsm',
+        nombre: t.name,
+        contenido: texto,
+        variables,
+        wa_template_name: t.name,
+        wa_language: t.language,
+      };
+    });
+
+  HSM_CACHE.set(proyecto.id, { ts: Date.now(), items });
+  return items;
+}
+
+// GET /api/conversations/:id/plantillas
+router.get('/:id/plantillas', async (req, res) => {
+  try {
+    const { proyecto_id, canal, visitor_id } = decodeId(req.params.id);
+    const proyecto = await ownedProject(proyecto_id, req.user.id);
+    if (!proyecto) return res.status(403).json({ error: 'Forbidden' });
+
+    // Las HSM solo aplican a WhatsApp; en web/telegram únicamente respuestas rápidas.
+    const [hsm, rapidasRes] = await Promise.all([
+      canal === 'whatsapp'
+        ? fetchPlantillasHsm(proyecto).catch(() => [])
+        : Promise.resolve([]),
+      supabase
+        .from('lead_templates')
+        .select('id, name, content, category')
+        .eq('user_id', req.user.id)
+        .order('name')
+        .then(r => r, () => ({ data: [] })),
+    ]);
+
+    const rapidas = (rapidasRes.data || []).map(t => ({
+      id: `rapida:${t.id}`,
+      tipo: 'rapida',
+      nombre: t.name,
+      contenido: t.content,
+      variables: [],
+      categoria: t.category || 'general',
+    }));
+
+    res.json({ plantillas: [...hsm, ...rapidas], hsm_disponibles: hsm.length });
+  } catch (err) {
+    console.error('[conversations] plantillas error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
