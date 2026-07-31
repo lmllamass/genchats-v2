@@ -1,16 +1,19 @@
-import { Bot, User, Loader2, Phone, Globe, StickyNote } from "lucide-react";
+import { Bot, User, Loader2, Phone, Globe, StickyNote, Mail } from "lucide-react";
+import { etiquetaContacto, datosContacto } from "@/lib/inboxContacto";
 
-const CANAL_LABEL = { whatsapp: "WhatsApp", web: "Web", telegram: "Telegram" };
+const CANAL_LABEL = { whatsapp: "WhatsApp", web: "Web", telegram: "Telegram", phone: "Voz" };
 const CANAL_ICON = {
   whatsapp: <span className="text-[11px]">💬</span>,
   web: <Globe className="w-3 h-3" />,
   telegram: <span className="text-[11px]">✈️</span>,
+  phone: <Phone className="w-3 h-3" />,
 };
 
 /** Cabecera de la conversación: contacto, acceso a notas y conmutador IA/humano. */
 export default function ConversationHeader({
   conv, showNotas, onToggleNotas, onToggleTakeover, togglingTakeover,
 }) {
+  const contacto = datosContacto(conv);
   return (
     <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-card/50 flex-shrink-0">
       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/40 to-blue-500/40 flex items-center justify-center">
@@ -18,14 +21,26 @@ export default function ConversationHeader({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          {conv.canal === "whatsapp" && <Phone className="w-3 h-3 text-muted-foreground" />}
-          <span className="text-sm font-semibold truncate">{conv.visitor_id}</span>
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <span className="text-sm font-semibold truncate">{etiquetaContacto(conv)}</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
             {CANAL_ICON[conv.canal]}
             {CANAL_LABEL[conv.canal] || conv.canal}
           </span>
         </div>
-        <p className="text-[11px] text-muted-foreground">{conv.proyecto_nombre}</p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-[11px] text-muted-foreground">{conv.proyecto_nombre}</p>
+          {/* Datos que solo conocemos tras resolver la identidad omnicanal del que llamó */}
+          {contacto.telefono && etiquetaContacto(conv) !== contacto.telefono && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Phone className="w-3 h-3" /> {contacto.telefono}
+            </span>
+          )}
+          {contacto.email && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground truncate">
+              <Mail className="w-3 h-3 shrink-0" /> {contacto.email}
+            </span>
+          )}
+        </div>
       </div>
 
       <button

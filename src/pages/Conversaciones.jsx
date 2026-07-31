@@ -64,10 +64,10 @@ export default function Conversaciones() {
           : entrantes
       ));
       setUltimoEntranteAt(data.ultimo_entrante_at || null);
-      // Sync takeover state in case it changed
+      // Sync takeover + contacto resuelto (en voz el visitor_id es un call_id opaco)
       setActiveConv(prev =>
         prev && prev.visitor_id === conv.visitor_id && prev.canal === conv.canal && prev.proyecto_id === conv.proyecto_id
-          ? { ...prev, human_takeover: data.human_takeover }
+          ? { ...prev, human_takeover: data.human_takeover, contacto: data.contacto ?? prev.contacto ?? null }
           : prev
       );
     } catch (err) {

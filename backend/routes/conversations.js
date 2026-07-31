@@ -69,6 +69,49 @@ function renderPlantilla(texto, valores = []) {
   return String(texto).replace(/\{\{(\d+)\}\}/g, (m, n) => valores[parseInt(n, 10) - 1] ?? m);
 }
 
+/**
+ * Resuelve el contacto real detrás de una o varias conversaciones de voz.
+ *
+ * En una llamada, `visitor_id` es el call_id de Retell — un identificador opaco, sin
+ * teléfono ni nombre. El dato sí existe, pero en la capa de identidad omnicanal:
+ * customer_identities(identity_type='retell_call_id') → customers.
+ *
+ * @param {string[]} callIds
+ * @returns {Promise<Object>} mapa call_id → { nombre, telefono, email, customer_id }
+ */
+async function resolverContactosDeVoz(proyectoId, callIds) {
+  if (!callIds.length) return {};
+
+  const { data: ids } = await supabase
+    .from('customer_identities')
+    .select('identity_value, customer_id')
+    .eq('proyecto_id', proyectoId)
+    .eq('identity_type', 'retell_call_id')
+    .in('identity_value', callIds)
+    .then(r => r, () => ({ data: [] }));
+  if (!ids?.length) return {};
+
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('id, display_name, primary_phone, primary_email')
+    .in('id', [...new Set(ids.map(i => i.customer_id))])
+    .then(r => r, () => ({ data: [] }));
+
+  const porId = Object.fromEntries((customers || []).map(c => [c.id, c]));
+  const mapa = {};
+  for (const i of ids) {
+    const c = porId[i.customer_id];
+    if (!c) continue;
+    mapa[i.identity_value] = {
+      customer_id: c.id,
+      nombre: c.display_name || null,
+      telefono: c.primary_phone || null,
+      email: c.primary_email || null,
+    };
+  }
+  return mapa;
+}
+
 // GET /api/conversations?projectId=X&canal=todos&page=1&limit=20
 router.get('/', async (req, res) => {
   try {
@@ -128,13 +171,28 @@ router.get('/', async (req, res) => {
     const all = Object.values(convMap)
       .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
 
-    const page_items = all.slice(offset, offset + parseInt(limit)).map(c => {
+    const pagina = all.slice(offset, offset + parseInt(limit));
+
+    // Las conversaciones de voz se identifican por call_id: resolvemos el contacto real
+    // en lote para no mostrar "call_6a0fbbde…" en la lista.
+    const contactosVoz = {};
+    const vozPorProyecto = {};
+    for (const c of pagina) {
+      if (c.canal !== 'phone') continue;
+      (vozPorProyecto[c.proyecto_id] ||= []).push(c.visitor_id);
+    }
+    await Promise.all(Object.entries(vozPorProyecto).map(async ([pid, ids]) => {
+      Object.assign(contactosVoz, await resolverContactosDeVoz(pid, ids).catch(() => ({})));
+    }));
+
+    const page_items = pagina.map(c => {
       const st = stateMap[c.id] || {};
       return {
         ...c,
         proyecto_nombre: proyectoMap[c.proyecto_id]?.nombre || 'Proyecto',
         human_takeover: st.human_takeover || false,
         human_takeover_at: st.human_takeover_at || null,
+        contacto: contactosVoz[c.visitor_id] || null,
       };
     });
 
@@ -190,10 +248,15 @@ router.get('/:id/messages', async (req, res) => {
       .maybeSingle()
       .then(r => r, () => ({ data: null }));
 
+    const contacto = canal === 'phone'
+      ? (await resolverContactosDeVoz(proyecto_id, [visitor_id]).catch(() => ({})))[visitor_id] || null
+      : null;
+
     res.json({
       messages: messages || [],
       human_takeover: st?.human_takeover || false,
       ultimo_entrante_at: ultimoEntrante?.created_at || null,
+      contacto,
       proyecto_id, visitor_id, canal,
     });
   } catch (err) {

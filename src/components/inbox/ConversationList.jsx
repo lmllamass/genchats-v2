@@ -1,13 +1,16 @@
-import { MessageCircle, Search, User, Loader2, Globe, RotateCcw } from "lucide-react";
+import { MessageCircle, Search, User, Loader2, Globe, RotateCcw, Phone } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import moment from "moment";
+import { etiquetaContacto } from "@/lib/inboxContacto";
 
 const CANAL_ICON = {
   whatsapp: <span className="text-[11px]">💬</span>,
   web: <Globe className="w-3 h-3" />,
   telegram: <span className="text-[11px]">✈️</span>,
+  phone: <Phone className="w-3 h-3" />,
 };
-const CANAL_FILTERS = ["todos", "whatsapp", "web", "telegram"];
+const CANAL_FILTERS = ["todos", "whatsapp", "phone", "web", "telegram"];
+const FILTRO_LABEL = { todos: "Todos", whatsapp: "WhatsApp", phone: "Voz", web: "Web", telegram: "Telegram" };
 
 /** Panel izquierdo del inbox: buscador, filtro de canal y lista de conversaciones. */
 export default function ConversationList({
@@ -41,13 +44,13 @@ export default function ConversationList({
             <button
               key={f}
               onClick={() => onCanalFilter(f)}
-              className={`flex-1 text-[10px] py-1 rounded-md font-medium transition-colors capitalize ${
+              className={`flex-1 text-[10px] py-1 rounded-md font-medium transition-colors ${
                 canalFilter === f
                   ? "bg-primary text-primary-foreground"
                   : "bg-secondary/50 text-muted-foreground hover:text-foreground"
               }`}
             >
-              {f}
+              {FILTRO_LABEL[f] ?? f}
             </button>
           ))}
         </div>
@@ -76,7 +79,7 @@ export default function ConversationList({
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-medium truncate">{conv.visitor_id}</span>
+                <span className="text-xs font-medium truncate">{etiquetaContacto(conv)}</span>
                 <span className="text-[10px] text-muted-foreground shrink-0">{moment(conv.last_message_at).fromNow()}</span>
               </div>
               <div className="flex items-center gap-1 mt-0.5">

@@ -305,9 +305,11 @@ export function attachRetellWebSocket(server) {
         // Persistir DESPUÉS de responder (no bloquea la latencia del turno)
         const lastUser = [...messages].reverse().find(m => m.role === 'user');
         if (lastUser && reply) {
+          // canal 'phone' explícito: sin él caía en el default 'web' y las llamadas
+          // aparecían en el inbox mezcladas con el chat web (ver 013_canal_phone.sql).
           supabase.from('conversaciones_chat').insert([
-            { proyecto_id: projectId, visitor_id: vid, role: 'user',      content: lastUser.content },
-            { proyecto_id: projectId, visitor_id: vid, role: 'assistant', content: reply },
+            { proyecto_id: projectId, visitor_id: vid, canal: 'phone', role: 'user',      content: lastUser.content },
+            { proyecto_id: projectId, visitor_id: vid, canal: 'phone', role: 'assistant', content: reply },
           ]).then(({ error }) => { if (error) console.warn('Retell chat save error:', error.message); });
 
           recordCustomerMessage(supabase, {
