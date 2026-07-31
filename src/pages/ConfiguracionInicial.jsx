@@ -92,6 +92,7 @@ export default function ConfiguracionInicial() {
             ["#ycloud", "1. YCloud (WhatsApp)"],
             ["#meta", "2. Meta WhatsApp Business"],
             ["#retell", "3. Retell (Voz) — Super Pro"],
+            ["#resend", "4. Resend (Email)"],
           ].map(([href, label]) => (
             <a key={href} href={href} style={{
               fontSize: 13, color: "#c4b5fd", textDecoration: "none",
@@ -153,6 +154,27 @@ export default function ConfiguracionInicial() {
             "Email con el que creaste la cuenta Retell",
             "La API Key generada",
             "Si quieres número nuevo o portar uno existente (y cuál)",
+          ]} />
+        </Seccion>
+
+        <Seccion
+          id="resend"
+          icon={<Mail style={{ width: 19, height: 19, color: "#fff" }} />}
+          titulo="4. Email desde tu dominio (Resend)"
+          subtitulo="Para que el chatbot pueda enviar emails a tus clientes (confirmaciones, seguimientos) y que lleguen desde tu propia dirección, no desde una genérica. Esto es lo que evita que acaben en spam."
+        >
+          <ol style={{ listStyle: "none", padding: 0, color: "#e2e8f0", fontSize: 14, lineHeight: 1.6 }}>
+            <Paso n={1}>Entra en <a href="https://resend.com/signup" target="_blank" rel="noreferrer" style={{ color: "#a5b4fc" }}>resend.com/signup</a> y crea una cuenta con el email de tu negocio (el plan gratuito cubre 3.000 emails al mes).</Paso>
+            <Paso n={2}>Ve a <strong>Domains → Add Domain</strong> e introduce el dominio de tu web (por ejemplo <em>minegocio.com</em>, sin el www).</Paso>
+            <Paso n={3}>Resend te mostrará unos <strong>registros DNS</strong> (SPF y DKIM). Hay que añadirlos donde tengas contratado el dominio — normalmente el mismo panel donde gestionas tu web. Si no sabes hacerlo, pásanos una captura de esos registros y te decimos exactamente qué poner, o dáselos a quien te lleve la web.</Paso>
+            <Paso n={4}>Cuando Resend marque el dominio como <strong>Verified</strong> (suele tardar de unos minutos a unas horas), ve a <strong>API Keys</strong> y genera una.</Paso>
+            <Paso n={5}>Decide desde qué dirección quieres que salgan los emails. Puede ser una que no exista como buzón, por ejemplo <em>reservas@minegocio.com</em> o <em>info@minegocio.com</em>.</Paso>
+          </ol>
+          <Enviar items={[
+            "La API Key de Resend",
+            "El dominio verificado",
+            "La dirección remitente que quieres usar (ej. reservas@minegocio.com)",
+            "El nombre que debe ver el cliente como remitente (ej. Autoescuela Ejemplo)",
           ]} />
         </Seccion>
 

@@ -10,6 +10,7 @@ import WhatsAppMessageHistory from "@/components/admin/WhatsAppMessageHistory";
 import TelegramProjectSection from "@/components/admin/TelegramProjectSection";
 import ToolsProjectSection from "@/components/admin/ToolsProjectSection";
 import RetellProjectSection from "@/components/admin/RetellProjectSection";
+import ResendProjectSection from "@/components/admin/ResendProjectSection";
 import { useConfigPlataforma } from "@/components/admin/config/useConfigPlataforma";
 
 const ESTADO_OPTIONS = ["activo", "pro_activo", "pausado", "inactivo"];
@@ -147,6 +148,12 @@ export default function AdminProyectoDetalle() {
       />
 
       <RetellProjectSection
+        proyecto={proyecto}
+        onUpdate={(data) => updateMut.mutate(data)}
+        saving={updateMut.isPending}
+      />
+
+      <ResendProjectSection
         proyecto={proyecto}
         onUpdate={(data) => updateMut.mutate(data)}
         saving={updateMut.isPending}
