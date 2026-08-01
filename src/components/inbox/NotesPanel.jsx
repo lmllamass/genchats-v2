@@ -66,8 +66,8 @@ export default function NotesPanel({ convId }) {
           className="text-xs bg-secondary/50 resize-none"
         />
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={añadir} disabled={!texto.trim() || estado === "guardando"} className="h-7 text-xs">
-            {estado === "guardando" ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Guardando…</> : "Añadir nota"}
+          <Button onClick={añadir} disabled={!texto.trim() || estado === "guardando"} className="h-10 px-4 text-sm font-medium">
+            {estado === "guardando" ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Guardando…</> : "Añadir nota"}
           </Button>
           {estado === "guardada" && (
             <span className="flex items-center gap-1 text-[11px] text-green-400">

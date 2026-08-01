@@ -50,7 +50,8 @@ function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext,
     ? `\n\nWHATSAPP: Ya conoces el número del cliente porque te está llamando desde él (${callerPhone}). Si pide que le mandes información, un enlace, un resumen o cualquier dato por escrito, usa DIRECTAMENTE la herramienta enviar_whatsapp con to="${callerPhone}" — NO le preguntes su número de teléfono, ya lo tienes. Solo pide un número distinto si el cliente dice explícitamente que quiere recibirlo en otro número.`
     : '\n\nWHATSAPP: Si el cliente quiere recibir información por escrito, pídele su número de WhatsApp y usa la herramienta enviar_whatsapp.')
     + '\nSi el cliente te DICTA un número de teléfono en voz alta (el suyo propio o uno distinto), repítelo tú en voz alta dígito a dígito para confirmarlo ANTES de usarlo en enviar_whatsapp ("Confirmo, es el 6-0-9-2-1-1-0-4-0, ¿correcto?") — los números hablados son fáciles de transcribir mal. No lo uses hasta que el cliente confirme que es correcto.'
-    + '\nIMPORTANTE: el texto que escribas en el parámetro "mensaje" de enviar_whatsapp NO tiene las restricciones del habla — no lo resumas ni omitas enlaces. Cuando el resultado de buscar_productos incluya URLs de producto (líneas con 👉), CÓPIALAS LITERALMENTE dentro de ese mensaje de WhatsApp; el cliente las necesita para ver la ficha. Las reglas de "sin webs, sin URLs, sin corchetes" del apartado FORMATO son solo para lo que dices en voz durante la llamada.';
+    + '\nIMPORTANTE: el texto que escribas en el parámetro "mensaje" de enviar_whatsapp NO tiene las restricciones del habla — no lo resumas ni omitas enlaces. Cuando el resultado de buscar_productos incluya URLs de producto (líneas con 👉), CÓPIALAS LITERALMENTE dentro de ese mensaje de WhatsApp; el cliente las necesita para ver la ficha. Las reglas de "sin webs, sin URLs, sin corchetes" del apartado FORMATO son solo para lo que dices en voz durante la llamada.'
+    + '\nSI EL WHATSAPP FALLA: la herramienta te lo dirá en su respuesta. No te quedes en "ha habido un problema" — discúlpate en una frase y ofrécele enviárselo por email. Pídele su dirección, repítesela en voz alta para confirmarla (los correos dictados se transcriben mal muy a menudo) y usa enviar_email con el MISMO contenido que ibas a mandar por WhatsApp, enlaces incluidos.';
 
   const bookingNote = '\n\nCITAS: Si el cliente quiere reservar o concertar una cita, confírmale en voz la fecha y hora que has entendido antes de usar concertar_cita ("Entonces, mañana martes a las diez de la mañana, ¿correcto?") — igual que con los números de teléfono, para evitar errores de transcripción. Calcula fecha_hora_iso a partir de la FECHA Y HORA ACTUAL de este contexto.';
 
@@ -241,8 +242,10 @@ export function attachRetellWebSocket(server) {
         const ecommerce = proyecto.ecommerce_config;
         const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
-        // enviar_whatsapp siempre disponible en llamadas de voz
-        const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp'])];
+        // En voz, enviar_whatsapp y enviar_email están siempre disponibles: son la única
+        // forma de que el cliente reciba por escrito lo que no se puede dictar por teléfono
+        // (enlaces, referencias), y el email es la salida cuando WhatsApp falla.
+        const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp', 'enviar_email'])];
 
         const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools);
         const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone, enabledTools);

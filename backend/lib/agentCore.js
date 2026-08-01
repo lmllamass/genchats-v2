@@ -10,6 +10,7 @@ import { queryEcommerce, formatProducts } from './ecommerceConnectors.js';
 import { callActionWebhook } from './actionsService.js';
 import { buildCustomerMemoryPrompt, updateCustomerFromContact } from './customerIdentityService.js';
 import { isSlotFree, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from './googleCalendar.js';
+import { isWindowOpen, sendFreeText, sendTemplate } from './whatsappSender.js';
 
 // ── Fecha/hora actual, para que el modelo calcule fechas relativas ("mañana", "el lunes") ──
 export function currentDateTimeLine() {
@@ -155,6 +156,19 @@ const ACTION_TOOL_DEFS = {
         to:      { type: 'string', description: 'Número en formato internacional. Si no se especifica, se usa el número del interlocutor.' },
       },
       required: ['mensaje'],
+    },
+  },
+  enviar_email: {
+    name: 'enviar_email',
+    description: 'Envía un email al cliente con la información que pida. Úsalo cuando el cliente prefiera email, o como alternativa cuando el envío por WhatsApp haya fallado. Si no conoces su dirección, pregúntasela y repítesela para confirmarla antes de enviar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        email:   { type: 'string', description: 'Dirección de correo del cliente.' },
+        asunto:  { type: 'string', description: 'Asunto del email, breve y concreto.' },
+        mensaje: { type: 'string', description: 'Cuerpo del email. Puede incluir enlaces y varias líneas.' },
+      },
+      required: ['email', 'asunto', 'mensaje'],
     },
   },
 };
@@ -713,74 +727,81 @@ export async function executeTool(toolName, toolInput, toolContext) {
     case 'enviar_whatsapp': {
       const to = toolInput.to || callerPhone;
       if (!to) return 'No tengo el número de WhatsApp del cliente.';
-
-      const apiKey = proyecto.ycloud_api_key || process.env.YCLOUD_API_KEY;
-      const fromNumber = proyecto.ycloud_phone_number;
-      if (!apiKey || !fromNumber) return 'WhatsApp no está configurado para este negocio.';
+      if (!proyecto.ycloud_phone_number) return 'WhatsApp no está configurado para este negocio.';
 
       try {
         // ¿Ventana de conversación abierta? (mensaje del cliente en las últimas 24h)
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const { data: lastInbound } = await supabase
-          .from('mensajes_wa')
-          .select('created_at')
-          .eq('proyecto_id', proyecto.id)
-          .eq('from_number', to)
-          .eq('estado', 'recibido')
-          .gte('created_at', since)
-          .order('created_at', { ascending: false })
-          .limit(1);
+        const windowOpen = await isWindowOpen(proyecto.id, to);
 
-        const windowOpen = !!lastInbound?.length;
-
-        // Enviar plantilla que manda el mensaje NO abre la ventana de 24h por sí sola
-        // (solo la abre una respuesta real del cliente), así que si la ventana está
-        // cerrada el mensaje completo va DENTRO de la plantilla, en una sola llamada.
-        let sendBody;
         if (windowOpen) {
-          sendBody = { from: fromNumber, to, type: 'text', text: { body: toolInput.mensaje } };
+          await sendFreeText(proyecto, to, toolInput.mensaje);
         } else {
+          // Enviar plantilla que manda el mensaje NO abre la ventana de 24h por sí sola
+          // (solo la abre una respuesta real del cliente), así que si la ventana está
+          // cerrada el mensaje completo va DENTRO de la plantilla, en una sola llamada.
           const businessName = config?.nombre_negocio || proyecto.nombre || 'nuestro negocio';
           // Las variables de plantilla no admiten saltos de línea ni espacios múltiples.
           let mensajeVar = toolInput.mensaje.replace(/\s*\n+\s*/g, ' · ').replace(/\s{2,}/g, ' ').trim();
           if (mensajeVar.length > 900) mensajeVar = mensajeVar.slice(0, 897) + '...';
-          sendBody = {
-            from: fromNumber,
-            to,
-            type: 'template',
-            template: {
-              name: 'genchats_info_agente',
-              language: { code: 'es' },
-              components: [{ type: 'body', parameters: [{ type: 'text', text: businessName }, { type: 'text', text: mensajeVar }] }],
-            },
-          };
+          await sendTemplate(proyecto, to, {
+            name: 'genchats_info_agente', language: 'es',
+            params: [businessName, mensajeVar], bodyText: toolInput.mensaje,
+          });
         }
-
-        const res = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
-          method: 'POST',
-          headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify(sendBody),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          console.error('[enviar_whatsapp] YCloud error:', data);
-          throw new Error(data?.message || `YCloud ${res.status}`);
-        }
-
-        await supabase.from('mensajes_wa').insert({
-          proyecto_id: proyecto.id,
-          from_number: fromNumber,
-          to_number: to,
-          mensaje: toolInput.mensaje,
-          wamid: data.id || null,
-          estado: 'enviado',
-        }).then(null, () => {});
 
         console.log(`📱 WhatsApp enviado a ${to} vía YCloud (${windowOpen ? 'ventana abierta' : 'vía plantilla genchats_info_agente'})`);
         return 'WhatsApp enviado correctamente.';
       } catch (err) {
-        console.error('[enviar_whatsapp] Error:', err.message);
-        return 'Hubo un problema al enviar el WhatsApp.';
+        // El número y la causa importan: sin ellos el 403 de YCloud es indepurable.
+        console.error(`[enviar_whatsapp] Error enviando a ${to} (ventana ${await isWindowOpen(proyecto.id, to) ? 'abierta' : 'cerrada'}):`, err.message);
+        // Se le dice al modelo qué hacer, no solo que ha fallado: si no, se queda en
+        // "hubo un problema" y deja al cliente sin la información que había pedido.
+        return 'No se ha podido enviar el WhatsApp. Discúlpate brevemente y ofrécele enviárselo por email: pídele su dirección de correo, repítesela para confirmar que la has entendido bien, y usa la herramienta enviar_email.';
+      }
+    }
+
+    case 'enviar_email': {
+      const destino = (toolInput.email || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destino)) {
+        return 'Esa dirección de email no parece válida. Pídele que te la repita, deletreada.';
+      }
+      try {
+        // Remitente del propio negocio si lo tiene configurado y verificado en Resend;
+        // si no, se envía desde la cuenta de plataforma con Reply-To del negocio, para
+        // que la respuesta del cliente le llegue a él y no a un buzón que nadie lee.
+        const propio = proyecto.email_activo && proyecto.email_remitente;
+        const resendKey = (propio && proyecto.resend_api_key) || process.env.RESEND_API_KEY;
+        if (!resendKey) {
+          console.error('[enviar_email] No hay RESEND_API_KEY disponible');
+          return 'No puedo enviar emails ahora mismo. Ofrécele otra vía de contacto.';
+        }
+        const negocio = config?.nombre_negocio || proyecto.nombre || 'nuestro negocio';
+        const from = propio
+          ? `${proyecto.email_remitente_nombre || negocio} <${proyecto.email_remitente}>`
+          : `${negocio} <${process.env.RESEND_FROM_EMAIL || 'noreply@genchats.app'}>`;
+        const replyTo = config?.email || config?.notification_email || undefined;
+
+        const cuerpoHtml = String(toolInput.mensaje)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/\n/g, '<br>');
+
+        const resend = new Resend(resendKey);
+        const { error } = await resend.emails.send({
+          from, to: destino, subject: toolInput.asunto || `Información de ${negocio}`,
+          ...(replyTo ? { reply_to: replyTo } : {}),
+          html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;font-size:15px;line-height:1.6;color:#111">
+            ${cuerpoHtml}
+            <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+            <p style="color:#9ca3af;font-size:12px">${negocio}</p>
+          </div>`,
+        });
+        if (error) throw new Error(error.message);
+
+        console.log(`✉️  Email enviado a ${destino} desde ${from} (proyecto ${proyecto.id})`);
+        return `Email enviado correctamente a ${destino}.`;
+      } catch (err) {
+        console.error('[enviar_email] Error:', err.message);
+        return 'No se ha podido enviar el email. Discúlpate y ofrécele que te deje un teléfono o que te lo pida por otro canal.';
       }
     }
 

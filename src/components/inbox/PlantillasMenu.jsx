@@ -64,9 +64,10 @@ export default function PlantillasMenu({ plantillas, loading, soloHsm, onInserta
     <>
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" disabled={disabled}
-            className="h-9 px-2 shrink-0 text-muted-foreground hover:text-foreground" title="Plantillas">
+          <Button type="button" variant="outline" disabled={disabled}
+            className="h-11 px-3 gap-1.5 shrink-0 text-muted-foreground hover:text-foreground" title="Plantillas y respuestas rápidas">
             <FileText className="w-4 h-4" />
+            <span className="hidden sm:inline text-xs">Plantillas</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" side="top" className="w-80 p-0">

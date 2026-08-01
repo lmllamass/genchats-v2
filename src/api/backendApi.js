@@ -110,6 +110,10 @@ export const api = {
   adminUpdateProyecto: (id, data) =>
     apiFetchAuth(`/api/admin/proyectos/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
+  /** Cambia el propietario de un chatbot a otra cuenta (solo admin). */
+  adminTransferirProyecto: (id, email) =>
+    apiFetchAuth(`/api/admin/proyectos/${id}/transferir`, { method: 'POST', body: JSON.stringify({ email }) }),
+
   genaMessage: (data) =>
     apiFetch('/api/gena/message', { method: 'POST', body: JSON.stringify(data), timeout: 30000 }),
 

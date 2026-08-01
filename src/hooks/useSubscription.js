@@ -7,7 +7,7 @@ const LIMITS = {
   gratis: { max_projects: 1 },
   basico: { max_projects: 3 },
   pro: { max_projects: 3 },
-  'super-pro': { max_projects: 3 },
+  'super-pro': { max_projects: 5 },
 };
 
 export function useSubscription() {

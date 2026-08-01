@@ -127,6 +127,95 @@ router.get('/proyectos', async (req, res) => {
   }
 });
 
+// Máximo de chatbots por plan. El frontend tiene su propia copia para pintar la UI, pero
+// la fuente de verdad para transferir tiene que estar en servidor.
+const MAX_PROYECTOS = { free: 1, gratis: 1, basico: 3, pro: 3, 'super-pro': 5, super_pro: 5 };
+
+// POST /api/admin/proyectos/:id/transferir — cambia el propietario de un chatbot.
+//
+// Caso de uso: se configura el chatbot con la cuenta de admin antes de que el cliente
+// pague, y al pagar se le traspasa ya montado.
+//
+// Casi todo cuelga de `proyecto_id` (conversaciones, leads, reservas, notas, canales), así
+// que viaja solo. Lo que NO viaja por sí mismo y se arregla aquí:
+//   · customers.user_id — se copia del proyecto al crear cada contacto, quedaría desfasado.
+//   · lead_templates    — están scoped por usuario, no por proyecto: se COPIAN (no se mueven,
+//                         porque el dueño original puede tener otros chatbots usándolas).
+router.post('/proyectos/:id/transferir', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const email = (req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'Falta el email del destinatario' });
+
+    const { data: proyecto } = await supabase
+      .from('proyectos').select('id, nombre, user_id').eq('id', id).single()
+      .then(r => r, () => ({ data: null }));
+    if (!proyecto) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    // El email real vive en auth.users: el trigger de alta no lo copia a user_profiles.
+    const { data: lista, error: authErr } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (authErr) throw new Error(authErr.message);
+    const destino = (lista.users || []).find(u => (u.email || '').toLowerCase() === email);
+    if (!destino) return res.status(404).json({ error: `No hay ninguna cuenta con el email ${email}` });
+    if (destino.id === proyecto.user_id) return res.status(400).json({ error: 'El proyecto ya es de esa cuenta' });
+
+    // Límite de chatbots del destinatario — se comprueba al crear, no al recibir.
+    const { data: perfil } = await supabase
+      .from('user_profiles').select('plan').eq('id', destino.id).single()
+      .then(r => r, () => ({ data: null }));
+    const plan = perfil?.plan || 'free';
+    const max = MAX_PROYECTOS[plan] ?? 1;
+    const { count: yaTiene } = await supabase
+      .from('proyectos').select('id', { count: 'exact', head: true }).eq('user_id', destino.id);
+    if ((yaTiene || 0) >= max) {
+      return res.status(409).json({
+        error: `${email} ya tiene ${yaTiene} chatbot(s) y su plan (${plan}) permite ${max}. Sube su plan antes de transferir.`,
+      });
+    }
+
+    const propietarioAnterior = proyecto.user_id;
+
+    // 1. Propiedad del proyecto
+    const { error: upErr } = await supabase
+      .from('proyectos').update({ user_id: destino.id }).eq('id', id);
+    if (upErr) throw new Error(upErr.message);
+
+    // 2. Contactos omnicanal de ese proyecto
+    await supabase.from('customers').update({ user_id: destino.id }).eq('proyecto_id', id)
+      .then(null, () => {});
+
+    // 3. Copia de las plantillas de respuesta rápida, sin duplicar las que ya tenga
+    let plantillasCopiadas = 0;
+    if (propietarioAnterior) {
+      const [{ data: origen }, { data: yaTeniaTpl }] = await Promise.all([
+        supabase.from('lead_templates').select('name, content, category').eq('user_id', propietarioAnterior)
+          .then(r => r, () => ({ data: [] })),
+        supabase.from('lead_templates').select('name').eq('user_id', destino.id)
+          .then(r => r, () => ({ data: [] })),
+      ]);
+      const existentes = new Set((yaTeniaTpl || []).map(t => t.name));
+      const nuevas = (origen || []).filter(t => !existentes.has(t.name))
+        .map(t => ({ user_id: destino.id, name: t.name, content: t.content, category: t.category }));
+      if (nuevas.length) {
+        const { error } = await supabase.from('lead_templates').insert(nuevas);
+        if (!error) plantillasCopiadas = nuevas.length;
+      }
+    }
+
+    console.log(`🔄 Proyecto ${proyecto.nombre} (${id}) transferido de ${propietarioAnterior} a ${destino.id} (${email})`);
+    res.json({
+      ok: true,
+      proyecto: proyecto.nombre,
+      nuevo_propietario: { id: destino.id, email },
+      propietario_anterior: propietarioAnterior,
+      plantillas_copiadas: plantillasCopiadas,
+    });
+  } catch (err) {
+    console.error('[admin] transferir proyecto error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/admin/proyectos/:id — update any project (service role bypasses RLS)
 router.patch('/proyectos/:id', async (req, res) => {
   try {

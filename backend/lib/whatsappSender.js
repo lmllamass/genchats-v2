@@ -8,19 +8,42 @@ import { supabase } from '../server.js';
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** ¿Ha escrito el cliente en las últimas 24h? Solo entonces se puede mandar texto libre. */
+/**
+ * ¿Ha escrito el cliente en las últimas 24h? Solo entonces se puede mandar texto libre.
+ *
+ * Se consultan DOS tablas porque el webhook de entrada no siempre deja rastro en ambas:
+ * en algunos proyectos `mensajes_wa` se queda vacía mientras el mensaje sí llega a
+ * `conversaciones_chat` (visto en producción con Fadecom el 2026-07-31: 0 filas en
+ * mensajes_wa y 6 en conversaciones_chat). Mirando solo la primera, el agente daba la
+ * ventana por cerrada con la conversación recién abierta, se iba a la rama de plantilla
+ * y YCloud devolvía 403. Basta con que CUALQUIERA de las dos tenga un entrante reciente.
+ */
 export async function isWindowOpen(proyectoId, to) {
   const since = new Date(Date.now() - WINDOW_MS).toISOString();
-  const { data } = await supabase
-    .from('mensajes_wa')
-    .select('created_at')
-    .eq('proyecto_id', proyectoId)
-    .eq('from_number', to)
-    .eq('estado', 'recibido')
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(1);
-  return !!data?.length;
+
+  const [wa, chat] = await Promise.all([
+    supabase
+      .from('mensajes_wa')
+      .select('created_at')
+      .eq('proyecto_id', proyectoId)
+      .eq('from_number', to)
+      .eq('estado', 'recibido')
+      .gte('created_at', since)
+      .limit(1)
+      .then(r => r, () => ({ data: [] })),
+    supabase
+      .from('conversaciones_chat')
+      .select('created_at')
+      .eq('proyecto_id', proyectoId)
+      .eq('visitor_id', to)
+      .eq('canal', 'whatsapp')
+      .eq('role', 'user')
+      .gte('created_at', since)
+      .limit(1)
+      .then(r => r, () => ({ data: [] })),
+  ]);
+
+  return !!(wa.data?.length || chat.data?.length);
 }
 
 function credentials(proyecto) {

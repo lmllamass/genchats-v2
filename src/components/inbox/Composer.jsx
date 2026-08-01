@@ -166,11 +166,15 @@ export default function Composer({
         </TooltipProvider>
 
         <Button
-          type="button" size="sm" onClick={enviar}
+          type="button" onClick={enviar}
           disabled={enviando || !texto.trim() || !ventanaAbierta}
-          className="shrink-0 h-9"
+          className="shrink-0 h-11 px-5 gap-2 text-sm font-medium"
         >
-          {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          {/* Con texto, no solo icono: es la acción principal del inbox y a 36px de
+              icono suelto costaba encontrarla. */}
+          {enviando
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando…</>
+            : <><Send className="w-4 h-4" /> Enviar</>}
         </Button>
       </div>
     </div>

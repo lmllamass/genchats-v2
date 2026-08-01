@@ -9,6 +9,7 @@ import TrialBanner from "@/components/TrialBanner";
 const NAV = [
   { to: "/app", icon: LayoutDashboard, label: "Mis Chatbots" },
   { to: "/nuevo", icon: Plus, label: "Nuevo Chatbot" },
+  { to: "/conversaciones", icon: MessageCircle, label: "Conversaciones" },
   { to: "/leads", icon: Users, label: "Leads" },
   { to: "/mi-cuenta", icon: User, label: "Mi cuenta" },
 ];

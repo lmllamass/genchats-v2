@@ -11,6 +11,7 @@ import TelegramProjectSection from "@/components/admin/TelegramProjectSection";
 import ToolsProjectSection from "@/components/admin/ToolsProjectSection";
 import RetellProjectSection from "@/components/admin/RetellProjectSection";
 import ResendProjectSection from "@/components/admin/ResendProjectSection";
+import TransferirProyecto from "@/components/admin/TransferirProyecto";
 import { useConfigPlataforma } from "@/components/admin/config/useConfigPlataforma";
 
 const ESTADO_OPTIONS = ["activo", "pro_activo", "pausado", "inactivo"];
@@ -162,6 +163,8 @@ export default function AdminProyectoDetalle() {
       <WhatsAppMessageHistory proyectoId={proyecto.id} />
 
       <ToolsProjectSection proyecto={proyecto} />
+
+      <TransferirProyecto proyecto={proyecto} onTransferido={() => updateMut.reset?.()} />
     </div>
   );
 }
