@@ -34,6 +34,8 @@ import leadsRouter from './routes/leads.js';
 import { attachRetellWebSocket } from './routes/retellWebhook.js';
 import monitorRouter from './routes/monitor.js';
 import whatsappTemplatesRouter from './routes/whatsappTemplates.js';
+import operadoresRouter from './routes/operadores.js';
+import mensajesWaRouter from './routes/mensajesWa.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -100,6 +102,8 @@ app.use('/api/leads', requireAuth, leadsRouter);
 app.use('/api/export', requireAuth, exportCsvRouter);
 app.use('/api/reservas', requireAuth, reservasRouter);
 app.use('/api/whatsapp-templates', requireAuth, whatsappTemplatesRouter);
+app.use('/api/operadores', requireAuth, operadoresRouter);
+app.use('/api/mensajes-wa', requireAuth, mensajesWaRouter);
 
 // ── Error handler ──
 app.use((err, req, res, next) => {
