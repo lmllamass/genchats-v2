@@ -171,6 +171,17 @@ const ACTION_TOOL_DEFS = {
       required: ['email', 'asunto', 'mensaje'],
     },
   },
+  desviar_llamada: {
+    name: 'desviar_llamada',
+    description: 'Transfiere la llamada en curso a una persona en el teléfono del negocio. Úsala SOLO cuando el cliente pida explícitamente hablar con una persona, o cuando la consulta requiera claramente atención humana que tú no puedes resolver. Antes de llamarla, dile al cliente que le vas a transferir — la llamada se corta hacia esa persona justo después de tu respuesta.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        motivo: { type: 'string', description: 'Motivo breve de la transferencia, para tu propio contexto.' },
+      },
+      required: [],
+    },
+  },
 };
 
 // ── Tool definitions ───────────────────────────────────────────────────────
@@ -803,6 +814,25 @@ export async function executeTool(toolName, toolInput, toolContext) {
         console.error('[enviar_email] Error:', err.message);
         return 'No se ha podido enviar el email. Discúlpate y ofrécele que te deje un teléfono o que te lo pida por otro canal.';
       }
+    }
+
+    case 'desviar_llamada': {
+      if (canal !== 'phone') return 'La transferencia de llamada solo está disponible por teléfono.';
+      let destino = (config?.telefono || '').replace(/[^\d+]/g, '');
+      if (!destino) {
+        console.warn(`[desviar_llamada] Sin teléfono configurado (proyecto ${proyecto.id})`);
+        return 'No hay un teléfono de transferencia configurado para este negocio. Discúlpate y ofrécele otra vía de contacto.';
+      }
+      // Los teléfonos de negocio se guardan a veces sin prefijo de país (ej. "689 65 61 22").
+      // Todos los negocios de esta plataforma son españoles, así que si no hay un "+" delante
+      // se asume +34 — sin esto Retell recibe un transfer_number inválido y no transfiere nada.
+      if (!destino.startsWith('+')) destino = `+34${destino.replace(/^0+/, '')}`;
+      // No se llama a ninguna API aquí: retellWebhook.js lee toolContext.transferNumber
+      // tras el bucle del agente y añade `transfer_number` a la respuesta final del turno —
+      // es Retell quien ejecuta la transferencia SIP real en cuanto recibe ese campo.
+      toolContext.transferNumber = destino;
+      console.log(`📞 Transferencia solicitada a ${toolContext.transferNumber} (proyecto ${proyecto.id}, motivo: ${toolInput.motivo || 'sin especificar'})`);
+      return 'Transferencia iniciada. Dile al cliente que le vas a pasar con una persona ahora mismo, en una frase breve — no digas nada más después.';
     }
 
     case 'capturar_pedido': {

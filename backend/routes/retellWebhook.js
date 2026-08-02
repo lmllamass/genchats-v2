@@ -245,7 +245,9 @@ export function attachRetellWebSocket(server) {
         // En voz, enviar_whatsapp y enviar_email están siempre disponibles: son la única
         // forma de que el cliente reciba por escrito lo que no se puede dictar por teléfono
         // (enlaces, referencias), y el email es la salida cuando WhatsApp falla.
-        const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp', 'enviar_email'])];
+        // desviar_llamada también: solo tiene sentido en voz, y su ejecutor ya comprueba
+        // si el proyecto tiene teléfono configurado antes de activarla de verdad.
+        const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp', 'enviar_email', 'desviar_llamada'])];
 
         const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools);
         const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone, enabledTools);
@@ -283,11 +285,15 @@ export function attachRetellWebSocket(server) {
         };
 
         let reply = '';
+        // Referencia mutable: si el agente llama a desviar_llamada, su ejecutor escribe
+        // aquí el número destino (ver 'desviar_llamada' en agentCore.js) y lo leemos
+        // después de runAgentLoop para añadirlo a la respuesta final del turno.
+        const toolContext = { proyecto, vid, canal: 'phone', config, existingLead, toolConfigs, callerPhone, customer: customerContext?.customer };
         try {
           reply = await runAgentLoop(
             anthropic,
             { system, tools, messages: agentMessages },
-            { proyecto, vid, canal: 'phone', config, existingLead, toolConfigs, callerPhone, customer: customerContext?.customer },
+            toolContext,
             4,
             hooks,
           );
@@ -302,6 +308,7 @@ export function attachRetellWebSocket(server) {
           response_id: msg.response_id,
           content: streamed ? '' : (reply || 'Perdona, no te he entendido. ¿Puedes repetirlo?'),
           content_complete: true,
+          ...(toolContext.transferNumber ? { transfer_number: toolContext.transferNumber } : {}),
           ...(endCall && { end_call: true }),
         }));
 
