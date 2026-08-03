@@ -761,6 +761,20 @@ export async function executeTool(toolName, toolInput, toolContext) {
         }
 
         console.log(`📱 WhatsApp enviado a ${to} vía YCloud (${windowOpen ? 'ventana abierta' : 'vía plantilla genchats_info_agente'})`);
+
+        // Sin esto, el envío proactivo (desde una llamada de voz o cualquier otro canal)
+        // era invisible en la pantalla de conversaciones de la operadora: solo quedaba en
+        // mensajes_wa, no en conversaciones_chat/conversaciones, que es lo que lee esa
+        // pantalla. `to` es el número del cliente, no `vid` (que en voz es el call_id).
+        await supabase.from('conversaciones_chat').insert({
+          proyecto_id: proyecto.id, visitor_id: to, canal: 'whatsapp',
+          role: 'assistant', content: toolInput.mensaje,
+        }).then(null, () => {});
+        await supabase.from('conversaciones').upsert({
+          proyecto_id: proyecto.id, visitor_id: to, canal: 'whatsapp',
+          last_message_at: new Date().toISOString(),
+        }, { onConflict: 'proyecto_id,visitor_id,canal' }).then(null, () => {});
+
         return 'WhatsApp enviado correctamente.';
       } catch (err) {
         // El número y la causa importan: sin ellos el 403 de YCloud es indepurable.
