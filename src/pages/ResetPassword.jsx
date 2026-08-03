@@ -19,12 +19,27 @@ export default function ResetPassword() {
   const [isInvite] = useState(() => window.location.hash.includes("type=invite"));
 
   useEffect(() => {
-    // For invite flow Supabase fires SIGNED_IN (not PASSWORD_RECOVERY).
-    // For recovery flow it fires PASSWORD_RECOVERY.
-    // Also check if a session already exists (race: event may fire before listener).
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true);
-    });
+    // El cliente usa flowType: 'pkce' (necesario para el login con Google), y en ese modo
+    // detectSessionInUrl SOLO procesa ?code=... en la URL — nunca el hash #access_token=...
+    // que es el formato que usan los links de recovery/invite de Supabase por email. Sin este
+    // parseo manual, el token se queda inerte en la URL y esta pantalla se cuelga en
+    // "Verificando enlace..." para siempre (bug real, reproducido 2026-08-03: sesión nunca
+    // se crea, localStorage vacío). Se hace aquí, no en el cliente global, para no tocar el
+    // flujo PKCE que sí necesita el login normal.
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const access_token = hashParams.get("access_token");
+    const refresh_token = hashParams.get("refresh_token");
+
+    if (access_token && refresh_token) {
+      supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
+        if (!error) setReady(true);
+      });
+    } else {
+      // Fallback: sesión ya establecida por otra vía, o evento aún por llegar.
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) setReady(true);
+      });
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN" || event === "USER_UPDATED") {
