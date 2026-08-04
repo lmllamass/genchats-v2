@@ -8,8 +8,11 @@ export default function EmbedCode({ proyecto }) {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const config = proyecto?.chatbot_config || {};
 
-  const configuredAppUrl = import.meta.env.VITE_APP_URL || "https://v2.genchats.app";
-  const domain = window.location.hostname === "localhost" ? window.location.origin : configuredAppUrl;
+  // Siempre el origen real desde el que se sirve el panel — nunca una URL fija de otro
+  // entorno. VITE_APP_URL no está definida en el .env.production de v1, así que el
+  // fallback anterior a "v2.genchats.app" se colaba en enlaces reales de producción
+  // (verificado: el chunk Exportar servido en genchats.app lo contenía literalmente).
+  const domain = window.location.origin;
   const publicUrl = `${domain}/chat/${proyecto?.id}`;
 
   const embedHtml = `<!-- Chatbot ${config.nombre_negocio || proyecto?.nombre} -->

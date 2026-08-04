@@ -8,7 +8,10 @@ import { api } from "@/api/backendApi";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
 
-const APP_URL = import.meta.env.VITE_APP_URL || "https://v2.genchats.app";
+// Origen real del panel, no una env var que puede faltar en el build (VITE_APP_URL no
+// está definida en .env.production de v1: sin esto, el snippet generado aquí apuntaba
+// a v2.genchats.app incluso para chatbots creados en producción).
+const APP_URL = window.location.origin;
 
 export default function Step3Generate({ data, onBack }) {
   const [generating, setGenerating] = useState(false);
