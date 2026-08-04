@@ -6,7 +6,7 @@ import { ArrowLeft, Loader2, Zap, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import WhatsAppProjectSection from "@/components/admin/WhatsAppProjectSection";
-import WhatsAppMessageHistory from "@/components/admin/WhatsAppMessageHistory";
+import WhatsAppConversationHistory from "@/components/admin/WhatsAppConversationHistory";
 import TelegramProjectSection from "@/components/admin/TelegramProjectSection";
 import ToolsProjectSection from "@/components/admin/ToolsProjectSection";
 import RetellProjectSection from "@/components/admin/RetellProjectSection";
@@ -160,7 +160,7 @@ export default function AdminProyectoDetalle() {
         saving={updateMut.isPending}
       />
 
-      <WhatsAppMessageHistory proyectoId={proyecto.id} />
+      <WhatsAppConversationHistory proyectoId={proyecto.id} />
 
       <ToolsProjectSection proyecto={proyecto} />
 
