@@ -127,6 +127,57 @@ router.get('/proyectos', async (req, res) => {
   }
 });
 
+// POST /api/admin/proyectos/:id/retell/ajustes-voz — aplica los ajustes de voz
+// recomendados al agente de Retell del proyecto, usando SU PROPIA api key (columna
+// retell_api_key, migración 023). Sin esto, cada ajuste (ruido, normalización de
+// números, sensibilidad a interrupciones) había que hacerlo a mano en el dashboard de
+// Retell de cada cliente — y esa cuenta no es la de plataforma, así que no había forma
+// de automatizarlo. La key nunca sale de aquí hacia el frontend.
+router.post('/proyectos/:id/retell/ajustes-voz', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: proyecto } = await supabase
+      .from('proyectos').select('nombre, retell_agent_id, retell_api_key').eq('id', id).single()
+      .then(r => r, () => ({ data: null }));
+    if (!proyecto) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    if (!proyecto.retell_agent_id) return res.status(400).json({ error: 'Este proyecto no tiene Retell Agent ID configurado' });
+    if (!proyecto.retell_api_key) {
+      return res.status(400).json({ error: 'Este proyecto no tiene API key de Retell guardada — pégala en la sección Voz IA antes de aplicar ajustes' });
+    }
+
+    // Valores por defecto recomendados; se pueden sobreescribir desde el body si algún
+    // día hace falta ajustar caso por caso.
+    const {
+      denoising_mode = 'noise-and-background-speech-cancellation',
+      interruption_sensitivity = 0.6,
+      speech_normalization = true,
+    } = req.body || {};
+
+    const r = await fetch(`https://api.retellai.com/update-agent/${proyecto.retell_agent_id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${proyecto.retell_api_key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        denoising_mode,
+        interruption_sensitivity,
+        handbook_config: { speech_normalization },
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return res.status(r.status).json({ error: data?.message || data?.error || 'Retell rechazó la actualización' });
+    }
+
+    console.log(`🎙️  Ajustes de voz aplicados al agente ${proyecto.retell_agent_id} (${proyecto.nombre})`);
+    res.json({
+      ok: true,
+      aplicado: { denoising_mode, interruption_sensitivity, speech_normalization },
+    });
+  } catch (err) {
+    console.error('[admin] ajustes-voz error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Máximo de chatbots por plan. El frontend tiene su propia copia para pintar la UI, pero
 // la fuente de verdad para transferir tiene que estar en servidor.
 const MAX_PROYECTOS = { free: 1, gratis: 1, basico: 3, pro: 3, 'super-pro': 5, super_pro: 5 };

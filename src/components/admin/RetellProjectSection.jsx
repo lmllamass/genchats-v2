@@ -2,8 +2,9 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Save, Copy, Pencil, Phone, Power } from "lucide-react";
+import { Loader2, Save, Copy, Pencil, Phone, Power, Wand2 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/api/backendApi";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://api-v2.genchats.app";
 
@@ -13,7 +14,9 @@ export default function RetellProjectSection({ proyecto, onUpdate, saving }) {
     retell_agent_id:    proyecto.retell_agent_id    || "",
     retell_phone_number: proyecto.retell_phone_number || "",
     retell_activo:      proyecto.retell_activo       ?? false,
+    retell_api_key:     proyecto.retell_api_key      || "",
   });
+  const [aplicandoAjustes, setAplicandoAjustes] = useState(false);
 
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
@@ -22,6 +25,26 @@ export default function RetellProjectSection({ proyecto, onUpdate, saving }) {
   const handleSave = () => {
     onUpdate(form);
     setEditing(false);
+  };
+
+  // Aplica denoising + normalización de números + sensibilidad de interrupción
+  // directamente en la cuenta Retell del cliente, usando su propia api key (nunca sale
+  // de la BD hacia aquí en texto plano tras guardarse). Sin esto había que pedirle al
+  // cliente que entrara a su dashboard de Retell y lo tocara él mismo, ajuste a ajuste.
+  const handleAplicarAjustesVoz = async () => {
+    setAplicandoAjustes(true);
+    try {
+      const r = await api.adminAplicarAjustesVozRetell(proyecto.id);
+      toast.success(
+        `Ajustes de voz aplicados: ruido ${r.aplicado.denoising_mode === "noise-and-background-speech-cancellation" ? "+ voces de fondo" : "estándar"}, ` +
+        `normalización de números ${r.aplicado.speech_normalization ? "ON" : "OFF"}, ` +
+        `sensibilidad ${r.aplicado.interruption_sensitivity}`
+      );
+    } catch (err) {
+      toast.error("Error aplicando ajustes: " + err.message);
+    } finally {
+      setAplicandoAjustes(false);
+    }
   };
 
   const handleDeactivate = () => {
@@ -69,7 +92,19 @@ export default function RetellProjectSection({ proyecto, onUpdate, saving }) {
             className="bg-red-600/20 text-red-300 border border-red-500/30 hover:bg-red-600/30">
             <Power className="w-3 h-3 mr-1" /> Desactivar
           </Button>
+          {proyecto.retell_api_key && (
+            <Button size="sm" onClick={handleAplicarAjustesVoz} disabled={aplicandoAjustes}
+              className="bg-violet-600/20 text-violet-300 border border-violet-500/30 hover:bg-violet-600/30">
+              {aplicandoAjustes ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Wand2 className="w-3 h-3 mr-1" />}
+              Aplicar ajustes de voz recomendados
+            </Button>
+          )}
         </div>
+        {!proyecto.retell_api_key && (
+          <p className="text-[10px] text-amber-400/80">
+            Sin API key de Retell guardada no se pueden aplicar ajustes (ruido, normalización de números) desde aquí — pégala en Editar.
+          </p>
+        )}
       </div>
     );
   }
@@ -106,6 +141,23 @@ export default function RetellProjectSection({ proyecto, onUpdate, saving }) {
             className="bg-white/5 border-white/10 text-white/90"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="text-xs text-violet-300/80 mb-1 block">
+          API key de Retell del cliente <span className="text-white/30">(opcional)</span>
+        </label>
+        <Input
+          type="password"
+          value={form.retell_api_key}
+          onChange={e => setField("retell_api_key", e.target.value)}
+          placeholder="key_xxxxxxxxxxxxxxxx"
+          className="bg-white/5 border-white/10 text-white/90 font-mono text-xs"
+        />
+        <p className="text-[10px] text-white/30 mt-1">
+          El agente vive en la cuenta de Retell del propio cliente, no en la de plataforma —
+          sin su key no podemos ajustar ruido, normalización de números ni sensibilidad desde aquí.
+        </p>
       </div>
 
       <div className="flex items-center gap-3">

@@ -114,6 +114,10 @@ export const api = {
   adminTransferirProyecto: (id, email) =>
     apiFetchAuth(`/api/admin/proyectos/${id}/transferir`, { method: 'POST', body: JSON.stringify({ email }) }),
 
+  /** Aplica denoising + normalización de números + sensibilidad al agente Retell del proyecto. */
+  adminAplicarAjustesVozRetell: (id, overrides) =>
+    apiFetchAuth(`/api/admin/proyectos/${id}/retell/ajustes-voz`, { method: 'POST', body: JSON.stringify(overrides || {}) }),
+
   genaMessage: (data) =>
     apiFetch('/api/gena/message', { method: 'POST', body: JSON.stringify(data), timeout: 30000 }),
 
