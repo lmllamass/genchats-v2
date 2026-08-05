@@ -50,7 +50,7 @@ function buildDatos(action, payload) {
  * @param {string} action         - Tool name (e.g. 'concertar_cita')
  * @param {object} payload        - Tool input from Claude
  * @param {object} toolConfig     - Tool-specific config from project_tools.config
- * @param {object} projectContext - { nombre, ycloud_api_key, ycloud_phone_number }
+ * @param {object} projectContext - { nombre, ycloud_api_key, ycloud_phone_number, visitor_id, canal, reply_webhook_url }
  */
 export async function callActionWebhook(projectId, action, payload, toolConfig = {}, projectContext = {}) {
   const webhookUrl = process.env.N8N_ACTIONS_WEBHOOK_URL;
@@ -69,6 +69,9 @@ export async function callActionWebhook(projectId, action, payload, toolConfig =
     ycloud_from:     projectContext.ycloud_phone_number || '',
     tool_config:     toolConfig,
     datos:           buildDatos(action, payload),
+    visitor_id:      projectContext.visitor_id || '',
+    canal:           projectContext.canal || '',
+    reply_webhook_url: projectContext.reply_webhook_url || '',
   };
 
   const controller = new AbortController();

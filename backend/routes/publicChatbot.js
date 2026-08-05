@@ -52,4 +52,52 @@ router.post('/:proyecto_id/message', async (req, res) => {
   }
 });
 
+// GET /api/chatbot-public/:proyecto_id/messages?visitor_id=X&after=ISO_TIMESTAMP
+// Used by the widget to poll for messages delivered asynchronously (e.g. an
+// n8n action whose real answer arrives seconds after the tool call returns).
+router.get('/:proyecto_id/messages', async (req, res) => {
+  try {
+    const { proyecto_id } = req.params;
+    const { visitor_id, after } = req.query;
+    if (!visitor_id) return res.status(400).json({ error: 'visitor_id required' });
+
+    let query = supabase
+      .from('conversaciones_chat')
+      .select('role, content, created_at')
+      .eq('proyecto_id', proyecto_id)
+      .eq('visitor_id', visitor_id)
+      .order('created_at', { ascending: true });
+    if (after) query = query.gt('created_at', after);
+
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ messages: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/chatbot-public/:proyecto_id/async-reply
+// Called by n8n (Actions Engine) to deliver a response that couldn't be
+// returned synchronously to the tool call — e.g. FADECOM_Reservas_v1 replying
+// to a web-chat visitor (no phone number, so it can't send via WhatsApp/YCloud).
+// Auth: shared secret (N8N_WEBHOOK_TOKEN), same one used for the actions webhook.
+router.post('/:proyecto_id/async-reply', async (req, res) => {
+  try {
+    const { proyecto_id } = req.params;
+    const { visitor_id, mensaje, token } = req.body;
+    const expected = process.env.N8N_WEBHOOK_TOKEN;
+    if (expected && token !== expected) return res.status(401).json({ error: 'invalid token' });
+    if (!visitor_id || !mensaje) return res.status(400).json({ error: 'visitor_id and mensaje required' });
+
+    const { error } = await supabase.from('conversaciones_chat').insert({
+      proyecto_id, visitor_id, canal: 'embed', role: 'assistant', content: mensaje,
+    });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

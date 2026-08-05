@@ -42,10 +42,34 @@ export default function ChatbotPublic() {
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   const visitorId = useRef(getOrCreateVisitorId());
+  const lastSeenRef = useRef(new Date().toISOString());
+  const pollTimerRef = useRef(null);
 
   useEffect(() => {
     loadConfig();
+    return () => clearInterval(pollTimerRef.current);
   }, [id]);
+
+  // Some actions (e.g. FADECOM's tool calls) answer asynchronously — the
+  // synchronous tool-call reply is just a filler ("dame un momento"), and the
+  // real answer lands seconds later via async-reply. Poll briefly for it.
+  const pollForAsyncReply = () => {
+    clearInterval(pollTimerRef.current);
+    let ticks = 0;
+    pollTimerRef.current = setInterval(async () => {
+      ticks += 1;
+      if (ticks > 15) { clearInterval(pollTimerRef.current); return; }
+      try {
+        const data = await api.publicChatbotMessages(id, visitorId.current, lastSeenRef.current);
+        const nuevos = data?.messages || [];
+        if (nuevos.length) {
+          lastSeenRef.current = nuevos[nuevos.length - 1].created_at;
+          setMessages((prev) => [...prev, ...nuevos.map((m) => ({ role: m.role, content: m.content }))]);
+          clearInterval(pollTimerRef.current);
+        }
+      } catch (_) { /* silent — next tick retries */ }
+    }, 2000);
+  };
 
   const loadConfig = async () => {
     try {
@@ -87,6 +111,8 @@ export default function ChatbotPublic() {
       });
       const reply = data?.reply || "Lo siento, no he podido procesar tu consulta.";
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      lastSeenRef.current = new Date().toISOString();
+      pollForAsyncReply();
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: "Error al enviar el mensaje. Inténtalo de nuevo." }]);
     } finally {

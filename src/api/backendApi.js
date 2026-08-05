@@ -55,6 +55,9 @@ export const api = {
   publicChatbotMessage: (proyecto_id, data) =>
     apiFetch(`/api/chatbot-public/${proyecto_id}/message`, { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
 
+  publicChatbotMessages: (proyecto_id, visitor_id, after) =>
+    apiFetch(`/api/chatbot-public/${proyecto_id}/messages?visitor_id=${encodeURIComponent(visitor_id)}${after ? `&after=${encodeURIComponent(after)}` : ''}`),
+
   stripeCheckout: (data) =>
     apiFetch('/api/stripe/checkout', { method: 'POST', body: JSON.stringify(data) }),
 

@@ -926,10 +926,14 @@ export async function executeTool(toolName, toolInput, toolContext) {
       // Delegate to n8n webhook if this is a registered action tool (ej. 'custom')
       if (Object.prototype.hasOwnProperty.call(ACTION_TOOL_DEFS, toolName)) {
         const toolConfig = toolConfigs?.[toolName] || {};
+        const backendUrl = process.env.API_PUBLIC_URL || '';
         const projectContext = {
           nombre:               proyecto.nombre,
           ycloud_api_key:       proyecto.ycloud_api_key || process.env.YCLOUD_API_KEY || '',
           ycloud_phone_number:  proyecto.ycloud_phone_number || '',
+          visitor_id:           vid || '',
+          canal:                canal || '',
+          reply_webhook_url:    backendUrl ? `${backendUrl}/api/chatbot-public/${proyecto.id}/async-reply` : '',
         };
         const result = await callActionWebhook(proyecto.id, toolName, toolInput, toolConfig, projectContext);
         return result.mensaje || result.message || (result.ok ? 'Acción completada correctamente.' : 'No se pudo completar la acción.');
