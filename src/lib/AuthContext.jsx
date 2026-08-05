@@ -9,6 +9,10 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  // RoleRoute encamina según `tipo_cuenta`, que vive en user_profiles y llega
+  // asíncrono: necesita saber si el perfil YA se intentó cargar (con éxito o no)
+  // para no quedarse esperando indefinidamente.
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -20,12 +24,16 @@ export const AuthProvider = ({ children }) => {
           setSupabaseUser(session.user);
           setIsAuthenticated(true);
           loadProfile(session.user.id, session.user);
+        } else {
+          // Sin sesión no hay perfil que cargar: darlo por resuelto evita que
+          // cualquier guardián que espere el perfil se quede colgado.
+          setProfileLoaded(true);
         }
         setIsLoadingAuth(false);
       })
       .catch(() => {
         // If the OAuth code exchange rejects, never leave the app stuck loading.
-        if (mounted) setIsLoadingAuth(false);
+        if (mounted) { setIsLoadingAuth(false); setProfileLoaded(true); }
       });
 
     // IMPORTANT: this callback runs while supabase holds its internal auth lock.
@@ -45,6 +53,7 @@ export const AuthProvider = ({ children }) => {
         setSupabaseUser(null);
         setProfile(null);
         setIsAuthenticated(false);
+        setProfileLoaded(true);
       }
     });
 
@@ -67,7 +76,12 @@ export const AuthProvider = ({ children }) => {
         data = created;
       }
       setProfile(data);
-    } catch (_) {}
+    } catch (_) {
+      // Silencioso a propósito: un perfil que no carga no debe tumbar la app.
+    } finally {
+      // Pase lo que pase, el intento terminó — si no, RoleRoute gira sin fin.
+      setProfileLoaded(true);
+    }
   };
 
   // user object compatible with old base44 usage across the app
@@ -77,6 +91,7 @@ export const AuthProvider = ({ children }) => {
         email: supabaseUser.email,
         full_name: profile?.full_name || supabaseUser.email,
         role: profile?.role || 'user',
+        tipo_cuenta: profile?.tipo_cuenta || 'cliente',
         plan: profile?.plan || 'free',
         trial_ends_at: profile?.trial_ends_at || null,
         stripe_customer_id: profile?.stripe_customer_id || null,
@@ -113,6 +128,7 @@ export const AuthProvider = ({ children }) => {
         supabaseUser,
         isAuthenticated,
         isLoadingAuth,
+        profileLoaded,
         isLoadingPublicSettings: false,
         authError: null,
         appPublicSettings: null,
