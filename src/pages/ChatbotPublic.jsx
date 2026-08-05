@@ -64,7 +64,13 @@ export default function ChatbotPublic() {
         const nuevos = data?.messages || [];
         if (nuevos.length) {
           lastSeenRef.current = nuevos[nuevos.length - 1].created_at;
-          setMessages((prev) => [...prev, ...nuevos.map((m) => ({ role: m.role, content: m.content }))]);
+          setMessages((prev) => {
+            // La ventana de polling puede solaparse con la respuesta síncrona
+            // ya mostrada (misma carrera de timestamps) — no duplicar.
+            const yaMostrados = new Set(prev.map((m) => m.role + ":" + m.content));
+            const aAnadir = nuevos.filter((m) => !yaMostrados.has(m.role + ":" + m.content));
+            return aAnadir.length ? [...prev, ...aAnadir.map((m) => ({ role: m.role, content: m.content }))] : prev;
+          });
           clearInterval(pollTimerRef.current);
         }
       } catch (_) { /* silent — next tick retries */ }
@@ -101,6 +107,10 @@ export default function ChatbotPublic() {
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
+    // Capturado antes de enviar: una respuesta asíncrona de n8n podría llegar
+    // muy rápido tras el ack síncrono, antes de que termináramos de procesar
+    // la respuesta aquí — así no se pierde por una carrera de timestamps.
+    lastSeenRef.current = new Date().toISOString();
 
     try {
       const data = await api.publicChatbotMessage(id, {
@@ -111,7 +121,6 @@ export default function ChatbotPublic() {
       });
       const reply = data?.reply || "Lo siento, no he podido procesar tu consulta.";
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-      lastSeenRef.current = new Date().toISOString();
       pollForAsyncReply();
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: "Error al enviar el mensaje. Inténtalo de nuevo." }]);
