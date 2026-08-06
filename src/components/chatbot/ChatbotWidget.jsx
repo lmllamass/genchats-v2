@@ -21,6 +21,35 @@ export default function ChatbotWidget({ proyecto, embedded = false }) {
   const [open, setOpen] = useState(embedded);
   const scrollRef = useRef(null);
   const visitorId = useRef(getOrCreateVisitorId(proyecto?.id));
+  const lastSeenRef = useRef(new Date().toISOString());
+  const pollTimerRef = useRef(null);
+
+  useEffect(() => () => clearInterval(pollTimerRef.current), []);
+
+  // Algunas acciones (las que delegan en n8n) responden en diferido: la respuesta
+  // síncrona es solo un "dame un segundo" y la real llega después. Sin esto, la
+  // vista previa se quedaba esperando para siempre.
+  const pollForAsyncReply = () => {
+    clearInterval(pollTimerRef.current);
+    let ticks = 0;
+    pollTimerRef.current = setInterval(async () => {
+      ticks += 1;
+      if (ticks > 15) { clearInterval(pollTimerRef.current); return; }
+      try {
+        const data = await api.publicChatbotMessages(proyecto.id, visitorId.current, lastSeenRef.current);
+        const nuevos = data?.messages || [];
+        if (nuevos.length) {
+          lastSeenRef.current = nuevos[nuevos.length - 1].created_at;
+          setMessages(prev => {
+            const yaMostrados = new Set(prev.map(m => m.role + ":" + m.content));
+            const aAnadir = nuevos.filter(m => !yaMostrados.has(m.role + ":" + m.content));
+            return aAnadir.length ? [...prev, ...aAnadir.map(m => ({ role: m.role, content: m.content }))] : prev;
+          });
+          clearInterval(pollTimerRef.current);
+        }
+      } catch (_) { /* silencioso: reintenta en el siguiente tick */ }
+    }, 2000);
+  };
 
   const config = proyecto?.chatbot_config || {};
   const cs = COLOR_SCHEMES[proyecto?.esquema_color] || COLOR_SCHEMES.azul_profesional;
@@ -43,6 +72,8 @@ export default function ChatbotWidget({ proyecto, embedded = false }) {
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
+    // Antes de enviar: si la respuesta diferida llega muy rápido, no se pierde.
+    lastSeenRef.current = new Date().toISOString();
 
     try {
       const res = await api.chatbotRespond({
@@ -52,6 +83,7 @@ export default function ChatbotWidget({ proyecto, embedded = false }) {
         channel: "web",
       });
       setMessages(prev => [...prev, { role: "assistant", content: res.reply || res.error || "Error al procesar." }]);
+      pollForAsyncReply();
     } catch (e) {
       const errMsg = e?.message || "Lo siento, no he podido procesar tu consulta. Inténtalo de nuevo.";
       setMessages(prev => [...prev, { role: "assistant", content: errMsg }]);
