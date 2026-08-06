@@ -20,46 +20,12 @@ export default function ConversacionesPanel({ proyectoId, activeConv, onSelect }
   const fetchConversations = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
-      // Query conversaciones_chat grouped by visitor_id+canal
-      const { data: msgs, error } = await supabase
-        .from("conversaciones_chat")
-        .select("visitor_id, canal, content, role, created_at")
-        .eq("proyecto_id", proyectoId)
-        .order("created_at", { ascending: false })
-        .limit(500);
-
-      if (error) throw error;
-
-      // Group: last message per (visitor_id, canal)
-      const map = {};
-      for (const m of msgs || []) {
-        const key = `${m.visitor_id}__${m.canal}`;
-        if (!map[key]) {
-          map[key] = {
-            id: `${proyectoId}~${m.canal}~${m.visitor_id}`,
-            visitor_id: m.visitor_id,
-            canal: m.canal,
-            proyecto_id: proyectoId,
-            last_message: m.content,
-            last_role: m.role,
-            last_message_at: m.created_at,
-            human_takeover: false,
-          };
-        }
-      }
-
-      // Get takeover states
-      const { data: states } = await supabase
-        .from("conversaciones")
-        .select("visitor_id, canal, human_takeover")
-        .eq("proyecto_id", proyectoId);
-
-      for (const s of states || []) {
-        const key = `${s.visitor_id}__${s.canal}`;
-        if (map[key]) map[key].human_takeover = s.human_takeover || false;
-      }
-
-      const sorted = Object.values(map).sort(
+      // Vía backend: la migración 017 cerró `conversaciones_chat` a service_role
+      // (historial de conversaciones = datos personales). Leerla directamente
+      // desde el navegador devuelve vacío en silencio. El endpoint ya agrupa por
+      // visitor_id+canal y resuelve el estado de takeover.
+      const res = await api.listConversations({ projectId: proyectoId, limit: 100 });
+      const sorted = (res?.conversations || []).sort(
         (a, b) => new Date(b.last_message_at) - new Date(a.last_message_at)
       );
       setConversations(sorted);

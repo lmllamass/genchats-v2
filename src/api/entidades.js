@@ -60,15 +60,13 @@ export const Proyecto = {
 
 // ── LEADS ──────────────────────────────────────────────────────────────────
 export const Lead = {
+  // Vía backend a propósito: la migración 017 cerró `leads` a service_role
+  // (contenía datos personales legibles sin login). El navegador ya no puede
+  // leer la tabla directamente — si se hace, devuelve vacío en silencio.
   async list(proyecto_id, limit = 50) {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('proyecto_id', proyecto_id)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (error) throw error;
-    return data || [];
+    const { api } = await import('./backendApi');
+    const res = await api.listLeads({ projectId: proyecto_id, limit });
+    return res?.leads || [];
   },
 
   async listAll(limit = 100) {
