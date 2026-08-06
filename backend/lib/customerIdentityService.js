@@ -243,17 +243,25 @@ export async function recordCustomerMessage(supabase, {
  */
 export async function loadCustomerHistory(supabase, customerId, currentMessage, limit = 30, currentChannel = null) {
   if (!customerId) return [];
+  // ascending:false + limit trae los últimos N mensajes; después se invierten a
+  // orden cronológico. Con ascending:true + limit se traían los N MÁS ANTIGUOS
+  // de todo el histórico del cliente: en cuanto acumulaba más de `limit`
+  // mensajes, el agente dejaba de ver lo hablado en la conversación en curso
+  // (olvidaba la sede elegida, se repetía y prometía respuestas que ya había
+  // dado). Es el mismo fallo que ya se corrigió en loadHistory, pero aquí no
+  // se llegó a aplicar — y esta función tiene prioridad sobre aquella.
   const { data } = await supabase
     .from('customer_messages')
     .select('role,content,channel,created_at')
     .eq('customer_id', customerId)
     .in('role', ['user', 'assistant'])
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(limit);
 
+  const cronologico = [...(data || [])].reverse();
   const messages = [];
-  for (const msg of data || []) {
-    if (msg.role === 'user' && msg.content === currentMessage && messages.length === (data || []).length - 1) continue;
+  for (const msg of cronologico) {
+    if (msg.role === 'user' && msg.content === currentMessage && messages.length === cronologico.length - 1) continue;
     const deOtroCanal = msg.role === 'user' && msg.channel && msg.channel !== currentChannel;
     messages.push({
       role: msg.role,

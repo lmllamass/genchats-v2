@@ -98,7 +98,7 @@ router.post('/respond', async (req, res) => {
 
     // Build system prompt and tools
     const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, canal, customerContext, actionTools);
-    const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools);
+    const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools, toolConfigs);
     const toolContext = { proyecto, vid, canal, config, existingLead, toolConfigs, customer: customerContext?.customer };
 
     // Run agent loop

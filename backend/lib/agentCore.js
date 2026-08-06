@@ -185,7 +185,7 @@ const ACTION_TOOL_DEFS = {
 };
 
 // ── Tool definitions ───────────────────────────────────────────────────────
-export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools = []) {
+export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools = [], toolConfigs = {}) {
   const tools = [];
 
   if (hasEcommerce) {
@@ -237,7 +237,34 @@ export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools =
 
   // n8n action tools — only injected when enabled for this project
   for (const toolName of enabledActionTools) {
-    if (ACTION_TOOL_DEFS[toolName]) tools.push(ACTION_TOOL_DEFS[toolName]);
+    if (!ACTION_TOOL_DEFS[toolName]) continue;
+    // `custom` es genérica: sin decirle QUÉ acciones existen, el modelo las
+    // adivina y acaba invocándolas como si fueran herramientas sueltas. Si el
+    // proyecto las declara en project_tools.config.acciones, se las detallamos
+    // aquí — el esquema de la herramienta pesa mucho más que el prompt.
+    const acciones = toolName === 'custom' ? toolConfigs?.custom?.acciones : null;
+    if (Array.isArray(acciones) && acciones.length) {
+      const lista = acciones.map(a =>
+        `- "${a.nombre}": ${a.descripcion}${a.datos ? ` — datos: ${a.datos}` : ''}`).join('\n');
+      tools.push({
+        ...ACTION_TOOL_DEFS.custom,
+        description:
+          'Ejecuta una de las acciones disponibles de este negocio. Llama SIEMPRE a esta '
+          + 'herramienta ("custom") indicando la acción en el campo `accion`; las acciones '
+          + 'NO existen como herramientas independientes.\n\nAcciones disponibles:\n' + lista,
+        input_schema: {
+          type: 'object',
+          properties: {
+            accion: { type: 'string', enum: acciones.map(a => a.nombre),
+                      description: 'Acción a ejecutar (una de las listadas)' },
+            datos:  { type: 'object', description: 'Datos que requiere esa acción' },
+          },
+          required: ['accion'],
+        },
+      });
+    } else {
+      tools.push(ACTION_TOOL_DEFS[toolName]);
+    }
   }
 
   return tools;
@@ -924,7 +951,17 @@ export async function executeTool(toolName, toolInput, toolContext) {
 
     default: {
       // Delegate to n8n webhook if this is a registered action tool (ej. 'custom')
-      if (Object.prototype.hasOwnProperty.call(ACTION_TOOL_DEFS, toolName)) {
+      const esAccionDeCustom = !ACTION_TOOL_DEFS[toolName] && toolConfigs?.custom;
+      if (Object.prototype.hasOwnProperty.call(ACTION_TOOL_DEFS, toolName) || esAccionDeCustom) {
+        // El modelo invoca con frecuencia la ACCIÓN como si fuera una herramienta
+        // (`solicitar_documentacion(...)` en vez de `custom({accion, datos})`),
+        // por muy explícito que sea el prompt. En vez de fallar, lo reencaminamos:
+        // es un comportamiento predecible del LLM y el sistema debe tolerarlo.
+        if (esAccionDeCustom) {
+          console.log(`[actions] '${toolName}' llamada como herramienta; reencaminada a custom`);
+          toolInput = { accion: toolName, datos: toolInput };
+          toolName = 'custom';
+        }
         const toolConfig = toolConfigs?.[toolName] || {};
         const backendUrl = process.env.API_PUBLIC_URL || '';
         const projectContext = {

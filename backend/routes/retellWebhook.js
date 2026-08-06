@@ -249,7 +249,7 @@ export function attachRetellWebSocket(server) {
         // si el proyecto tiene teléfono configurado antes de activarla de verdad.
         const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp', 'enviar_email', 'desviar_llamada'])];
 
-        const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools);
+        const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools, toolConfigs);
         const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone, enabledTools);
         // Retell nos da la transcripción COMPLETA de esta llamada en cada turno (gratis, en vivo) —
         // nunca hay que descartarla. `unifiedHistory` solo aporta valor para contexto de OTROS
