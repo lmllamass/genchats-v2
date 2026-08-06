@@ -36,7 +36,7 @@ import monitorRouter from './routes/monitor.js';
 import whatsappTemplatesRouter from './routes/whatsappTemplates.js';
 import operadoresRouter from './routes/operadores.js';
 import mensajesWaRouter from './routes/mensajesWa.js';
-import documentosRouter from './routes/documentos.js';
+import archivosRouter from './routes/archivos.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -106,9 +106,10 @@ app.use('/api/whatsapp-templates', requireAuth, whatsappTemplatesRouter);
 app.use('/api/operadores', requireAuth, operadoresRouter);
 app.use('/api/mensajes-wa', requireAuth, mensajesWaRouter);
 
-// Documentación del cliente final: define sus propias rutas completas
-// (/api/documentos/... para n8n y /d/:token para el alumno), por eso va en raíz.
-app.use('/', documentosRouter);
+// Portal de archivos del cliente final: define sus propias rutas completas
+// (/api/archivos/... para n8n y el panel, /p/:token para el contacto), por eso
+// va montado en raíz.
+app.use('/', archivosRouter);
 
 // ── Error handler ──
 app.use((err, req, res, next) => {
