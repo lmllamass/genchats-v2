@@ -116,6 +116,61 @@ router.get('/customer/:customerId', async (req, res) => {
   }
 });
 
+/**
+ * Contacto omnicanal de cada conversación de la página, en lote.
+ *
+ * El hilo del panel se identifica por visitor_id; en la capa de identidad eso es
+ * el channel_thread_id de customer_conversations (o legacy_visitor_id en los
+ * hilos antiguos). Devuelve un mapa id-de-conversación → { nombre, telefono, customer_id }.
+ */
+async function resolverContactosDeHilos(conversaciones) {
+  const porProyecto = {};
+  for (const c of conversaciones) {
+    if (c.canal === 'phone') continue;   // esas ya las resuelve resolverContactosDeVoz
+    (porProyecto[c.proyecto_id] ||= new Set()).add(c.visitor_id);
+  }
+
+  const mapa = {};
+  await Promise.all(Object.entries(porProyecto).map(async ([pid, ids]) => {
+    const lista = [...ids];
+    const [{ data: porHilo }, { data: porLegado }] = await Promise.all([
+      supabase.from('customer_conversations').select('customer_id, channel_thread_id')
+        .eq('proyecto_id', pid).in('channel_thread_id', lista),
+      supabase.from('customer_conversations').select('customer_id, legacy_visitor_id')
+        .eq('proyecto_id', pid).in('legacy_visitor_id', lista),
+    ]);
+
+    const porVisitante = {};
+    for (const f of porLegado || []) porVisitante[f.legacy_visitor_id] = f.customer_id;
+    for (const f of porHilo || [])   porVisitante[f.channel_thread_id] = f.customer_id;
+
+    const customerIds = [...new Set(Object.values(porVisitante))];
+    if (!customerIds.length) return;
+
+    const { data: customers } = await supabase
+      .from('customers').select('id, display_name, primary_phone, primary_email')
+      .in('id', customerIds);
+    const porId = Object.fromEntries((customers || []).map(c => [c.id, c]));
+
+    for (const c of conversaciones) {
+      if (c.proyecto_id !== pid) continue;
+      const cust = porId[porVisitante[c.visitor_id]];
+      if (!cust) continue;
+      // Solo se considera "identificado" si hay algo que enseñar: un contacto
+      // sin nombre ni teléfono no mejora en nada al visitor_id.
+      if (!cust.display_name && !cust.primary_phone) continue;
+      mapa[c.id] = {
+        customer_id: cust.id,
+        nombre: cust.display_name || null,
+        telefono: cust.primary_phone || null,
+        email: cust.primary_email || null,
+      };
+    }
+  }));
+
+  return mapa;
+}
+
 // GET /api/conversations?projectId=X&canal=todos&page=1&limit=20
 router.get('/', async (req, res) => {
   try {
@@ -187,6 +242,11 @@ router.get('/', async (req, res) => {
       Object.assign(contactosVoz, await resolverContactosDeVoz(pid, ids).catch(() => ({})));
     }));
 
+    // Y para el resto de canales, el contacto omnicanal: sin esto la lista
+    // enseña "web_mshg95z5_e3zhvt2e" y hay que ir abriendo hilos para saber
+    // quién es cada uno. Una consulta en lote para toda la página.
+    const contactosHilo = await resolverContactosDeHilos(pagina).catch(() => ({}));
+
     const page_items = pagina.map(c => {
       const st = stateMap[c.id] || {};
       return {
@@ -194,7 +254,7 @@ router.get('/', async (req, res) => {
         proyecto_nombre: proyectoMap[c.proyecto_id]?.nombre || 'Proyecto',
         human_takeover: st.human_takeover || false,
         human_takeover_at: st.human_takeover_at || null,
-        contacto: contactosVoz[c.visitor_id] || null,
+        contacto: contactosVoz[c.visitor_id] || contactosHilo[c.id] || null,
       };
     });
 

@@ -138,7 +138,12 @@ export default function ConversacionMessages({ conversation, onTakeoverChange })
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               {conversation.canal === "whatsapp" && <Phone className="w-3 h-3 text-muted-foreground" />}
-              <span className="text-sm font-semibold truncate">{conversation.visitor_id}</span>
+              <span className="text-sm font-semibold truncate">
+                {conversation.contacto?.nombre || conversation.contacto?.telefono || conversation.visitor_id}
+              </span>
+              {conversation.contacto?.nombre && conversation.contacto?.telefono && (
+                <span className="text-xs text-muted-foreground shrink-0">· {conversation.contacto.telefono}</span>
+              )}
               <span className="text-xs text-muted-foreground">· {CANAL_LABEL[conversation.canal] || conversation.canal}</span>
             </div>
           </div>

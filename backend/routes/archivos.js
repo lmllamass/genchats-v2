@@ -65,6 +65,11 @@ async function cargarConfig(proyectoId) {
     slotsPorDefecto: Array.isArray(cfg.slots) && cfg.slots.length ? cfg.slots : SLOTS_POR_DEFECTO,
     webhookConfirmacion: cfg.webhook_confirmacion || '',
     diasValidez: cfg.dias_validez || 7,
+    // Política de privacidad del negocio. Si el proyecto la configura, el
+    // contacto tiene que aceptarla antes de poder subir nada — y se guarda que
+    // lo hizo, con fecha. Si no hay URL no se le pide nada: no habría a qué
+    // remitirle, y un check sin documento detrás no vale para nada.
+    urlPrivacidad: cfg.url_privacidad || '',
     avisoPrivacidad: cfg.aviso_privacidad
       || 'Los archivos se usan únicamente para gestionar tu solicitud y se conservan el tiempo '
        + 'imprescindible. Puedes ejercer tus derechos de acceso y supresión escribiendo al negocio.',
@@ -87,7 +92,8 @@ async function conEnlace(req, res, next) {
   if (!config) return res.status(404).json({ error: 'No encontrado' });
 
   const { data: contacto } = await supabase
-    .from('customers').select('id, display_name').eq('id', enlace.customer_id).single();
+    // metadata se trae para no pisarla al registrar el consentimiento.
+    .from('customers').select('id, display_name, consent_status, metadata').eq('id', enlace.customer_id).single();
 
   const slots = Array.isArray(enlace.slots) && enlace.slots.length
     ? enlace.slots : config.slotsPorDefecto;
@@ -95,6 +101,9 @@ async function conEnlace(req, res, next) {
   req.portal = {
     enlace, config, contacto, slots,
     carpeta: `${enlace.proyecto_id}/${enlace.customer_id}`,
+    // Solo hace falta pedirlo si hay política publicada y no consta que ya la
+    // haya aceptado antes (por este portal o por cualquier otro canal).
+    faltaConsentimiento: !!config.urlPrivacidad && contacto?.consent_status !== 'granted',
   };
   next();
 }
@@ -165,11 +174,41 @@ router.get('/p/:token/estado', conEnlace, async (req, res) => {
   });
 });
 
+// El contacto acepta la política de privacidad del negocio.
+router.post('/p/:token/consentimiento', express.json(), conEnlace, async (req, res) => {
+  const { enlace, config } = req.portal;
+  if (!config.urlPrivacidad) return res.status(400).json({ error: 'Este negocio no tiene política publicada' });
+
+  const { error } = await supabase
+    .from('customers')
+    .update({
+      consent_status: 'granted',
+      consent_source: 'portal_archivos',
+      consent_at: new Date().toISOString(),
+      // Se guarda la URL concreta que se le enseñó: si mañana cambia el texto de
+      // la política, sigue constando a qué versión dijo que sí.
+      metadata: { ...(req.portal.contacto?.metadata || {}), politica_aceptada: config.urlPrivacidad },
+    })
+    .eq('id', enlace.customer_id);
+
+  if (error) {
+    console.error('[archivos] consentimiento:', error.message);
+    return res.status(500).json({ error: 'No se ha podido registrar' });
+  }
+  console.log(`[archivos] consentimiento aceptado · contacto ${enlace.customer_id}`);
+  res.json({ ok: true });
+});
+
 router.put('/p/:token/subir/:slot', conEnlace,
   express.raw({ type: () => true, limit: TAM_MAXIMO }),
   async (req, res) => {
-    const { enlace, slots, carpeta } = req.portal;
+    const { enlace, slots, carpeta, faltaConsentimiento } = req.portal;
     if (!puede(enlace, 'subir')) return res.status(403).json({ error: 'Este enlace no permite subir' });
+    // Se comprueba en el servidor a propósito: una casilla que solo vive en el
+    // JavaScript de la página no es consentimiento, es decoración.
+    if (faltaConsentimiento) {
+      return res.status(451).json({ error: 'Antes de subir tienes que aceptar la política de privacidad.' });
+    }
 
     const slot = slots.find(s => s.id === req.params.slot);
     if (!slot) return res.status(400).json({ error: 'Documento no reconocido' });
@@ -309,6 +348,12 @@ function envoltorio(titulo, color, cuerpo) {
   .doc.ok{border:1px solid #bfe8cd}
   .doc.error .estado{background:#fdecec;color:#d33}
   .aviso{font-size:12px;color:#6b7280;margin:20px 0 0;line-height:1.5}
+  .consent{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px;
+           box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;gap:12px;align-items:flex-start}
+  .consent input{width:22px;height:22px;flex-shrink:0;margin:0;accent-color:${color}}
+  .consent label{font-size:13px;line-height:1.45;color:#3d444f}
+  .consent a{color:${color};font-weight:600}
+  .bloqueado{opacity:.45;pointer-events:none}
   .fin{background:#fff;border-radius:12px;padding:28px 20px;text-align:center;
        box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .fin .tick{font-size:46px;line-height:1}
@@ -325,7 +370,7 @@ function paginaError(titulo, texto) {
 <div class="env"><div class="ficha"><span>${esc(texto)}</span></div></div>`);
 }
 
-function paginaPortal({ enlace, config, contacto, slots }) {
+function paginaPortal({ enlace, config, contacto, slots, faltaConsentimiento }) {
   const { marca, avisoPrivacidad } = config;
   const puedeSubir = puede(enlace, 'subir');
   const puedeBajar = puede(enlace, 'descargar');
@@ -360,13 +405,23 @@ function paginaPortal({ enlace, config, contacto, slots }) {
   </div>
 
   ${puedeBajar ? '<div id="zona-descargas"></div>' : ''}
-  ${puedeSubir ? `<h3>Lo que necesitamos de ti</h3><div id="lista">${tarjetas}</div>` : ''}
+
+  ${faltaConsentimiento ? `
+  <div class="consent">
+    <input type="checkbox" id="acepto">
+    <label for="acepto">He leído y acepto la
+      <a href="${esc(config.urlPrivacidad)}" target="_blank" rel="noopener noreferrer">política de privacidad</a>
+      de ${esc(marca.nombre)} y el tratamiento de mis datos para gestionar esta solicitud.</label>
+  </div>` : ''}
+
+  ${puedeSubir ? `<h3>Lo que necesitamos de ti</h3><div id="lista"${faltaConsentimiento ? ' class="bloqueado"' : ''}>${tarjetas}</div>` : ''}
 
   <p class="aviso">${esc(avisoPrivacidad)}</p>
 </div>
 <script>
 const SLOTS = ${JSON.stringify(puedeSubir ? slots.map(s => s.id) : [])};
 const PUEDE_BAJAR = ${puedeBajar};
+let faltaConsentimiento = ${!!faltaConsentimiento};
 const BASE = location.pathname.replace(/\\/$/, '');
 const hechos = new Set();
 
@@ -439,9 +494,33 @@ function pintarDescargas(lista) {
   zona.innerHTML = '<h3>Documentos para ti</h3>' + filas;
 }
 
+/* La casilla desbloquea la subida, pero quien manda es el servidor: la comprueba
+   en cada PUT y responde 451 si no consta aceptada. Esto es solo la parte visible. */
+const casilla = document.getElementById('acepto');
+if (casilla) {
+  casilla.onchange = async () => {
+    if (!casilla.checked) return;
+    casilla.disabled = true;
+    try {
+      const res = await fetch(BASE + '/consentimiento', { method: 'POST' });
+      if (!res.ok) throw new Error();
+      faltaConsentimiento = false;
+      document.getElementById('lista')?.classList.remove('bloqueado');
+      document.querySelector('.consent')?.style.setProperty('opacity', '.6');
+    } catch (e) {
+      casilla.checked = false;
+      casilla.disabled = false;
+      alert('No se ha podido registrar. Inténtalo de nuevo.');
+    }
+  };
+}
+
 for (const slot of SLOTS) {
   const input = document.getElementById('in-' + slot);
-  document.getElementById('doc-' + slot).onclick = () => input.click();
+  document.getElementById('doc-' + slot).onclick = () => {
+    if (faltaConsentimiento) { alert('Marca antes la casilla de la política de privacidad.'); return; }
+    input.click();
+  };
   input.onchange = () => { if (input.files[0]) enviar(slot, input.files[0]); input.value = ''; };
 }
 

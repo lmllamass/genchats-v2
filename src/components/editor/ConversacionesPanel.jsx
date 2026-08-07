@@ -54,10 +54,13 @@ export default function ConversacionesPanel({ proyectoId, activeConv, onSelect }
     );
   }, [activeConv?.human_takeover]);
 
+  // Se busca también por nombre y teléfono del contacto: buscar por visitor_id
+  // no le sirve a nadie, es un identificador interno.
   const filtered = conversations.filter(c => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return c.visitor_id?.toLowerCase().includes(q) || c.last_message?.toLowerCase().includes(q);
+    return [c.visitor_id, c.last_message, c.contacto?.nombre, c.contacto?.telefono]
+      .some(v => v?.toLowerCase().includes(q));
   });
 
   if (loading) {
@@ -111,9 +114,14 @@ export default function ConversacionesPanel({ proyectoId, activeConv, onSelect }
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-medium truncate">{conv.visitor_id}</span>
+                    <span className="text-xs font-medium truncate">
+                      {conv.contacto?.nombre || conv.contacto?.telefono || conv.visitor_id}
+                    </span>
                     <span className="text-[10px] text-muted-foreground shrink-0">{moment(conv.last_message_at).fromNow()}</span>
                   </div>
+                  {conv.contacto?.nombre && conv.contacto?.telefono && (
+                    <span className="block text-[10px] text-muted-foreground/80 truncate">{conv.contacto.telefono}</span>
+                  )}
                   <div className="flex items-center gap-1 mt-0.5">
                     <span className="text-muted-foreground">{CANAL_ICON[conv.canal] || "💬"}</span>
                     <span className="text-[10px] text-muted-foreground truncate">{conv.last_message?.substring(0, 38) || "—"}</span>
