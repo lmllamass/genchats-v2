@@ -997,34 +997,97 @@ export async function runAgentLoop(anthropic, { system, tools, messages }, toolC
   let currentMessages = [...messages];
   let fillerFired = false;
 
-  for (let iter = 0; iter < maxIter; iter++) {
-    let response;
+  // El tope no cuesta nada si no se gasta, y quedarse corto sí: al truncar en
+  // mitad de un bloque tool_use la respuesta llega SIN texto y sin herramienta
+  // que ejecutar, y el turno se perdía con un "no pude procesar tu consulta".
+  const MAX_TOKENS = 1024;
+  const MAX_TOKENS_REINTENTO = 2048;
 
+  const pedirRespuesta = async (maxTokens) => {
     if (streaming) {
       const stream = anthropic.messages.stream({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
+        max_tokens: maxTokens,
         system,
         tools,
         messages: currentMessages,
       });
       stream.on('text', (delta) => { onDelta(delta); });
-      response = await stream.finalMessage();
-    } else {
-      response = await callWithRetry(() =>
-        anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 600,
-          system,
-          tools,
-          messages: currentMessages,
-        })
-      );
+      return stream.finalMessage();
+    }
+    return callWithRetry(() =>
+      anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: maxTokens,
+        system,
+        tools,
+        messages: currentMessages,
+      })
+    );
+  };
+
+  /** Ejecuta en paralelo todas las herramientas que pida una respuesta. */
+  const ejecutarHerramientas = (respuesta) => Promise.all(
+    respuesta.content.filter(b => b.type === 'tool_use').map(async (tu) => {
+      try {
+        const result = await executeTool(tu.name, tu.input, toolContext);
+        return {
+          type: 'tool_result',
+          tool_use_id: tu.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result),
+        };
+      } catch (err) {
+        console.error(`Tool ${tu.name} error:`, err.message);
+        return {
+          type: 'tool_result',
+          tool_use_id: tu.id,
+          content: `Error al ejecutar ${tu.name}: ${err.message}`,
+          is_error: true,
+        };
+      }
+    })
+  );
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    let response = await pedirRespuesta(MAX_TOKENS);
+
+    if (response.stop_reason === 'max_tokens') {
+      console.warn(`[agente] respuesta truncada por max_tokens (iter ${iter})`);
     }
 
     // Final answer
     if (response.stop_reason !== 'tool_use') {
-      const textBlock = response.content.find(b => b.type === 'text');
+      let textBlock = response.content.find(b => b.type === 'text');
+
+      // Sin texto y sin herramienta: no hay nada que devolverle al cliente. Es
+      // recuperable —al usuario que lo sufrió le bastó con escribir "¿por qué
+      // no?" para que funcionara—, así que se reintenta una vez con más margen.
+      // Es seguro incluso en streaming: si no hay bloque de texto es que no se
+      // ha emitido ningún delta, así que no se duplica nada por pantalla.
+      if (!textBlock?.text) {
+        console.warn('[agente] respuesta sin texto utilizable — stop_reason: '
+          + `${response.stop_reason}, bloques: [${response.content.map(b => b.type).join(', ')}]. Reintentando.`);
+        response = await pedirRespuesta(MAX_TOKENS_REINTENTO);
+        textBlock = response.content.find(b => b.type === 'text');
+        // Si el reintento sí pide herramientas, se sigue el flujo normal.
+        if (response.stop_reason === 'tool_use') {
+          if (streaming && onToolStart && !fillerFired) {
+            fillerFired = true;
+            try { onToolStart(); } catch { /* noop */ }
+          }
+          const resultados = await ejecutarHerramientas(response);
+          currentMessages = [
+            ...currentMessages,
+            { role: 'assistant', content: response.content },
+            { role: 'user',      content: resultados },
+          ];
+          continue;
+        }
+      }
+
+      if (!textBlock?.text) {
+        console.error('[agente] el reintento tampoco dio texto — stop_reason: ' + response.stop_reason);
+      }
       return textBlock?.text || 'Lo siento, no pude procesar tu consulta.';
     }
 
@@ -1037,28 +1100,7 @@ export async function runAgentLoop(anthropic, { system, tools, messages }, toolC
       try { onToolStart(); } catch { /* noop */ }
     }
 
-    // Execute all tool calls in parallel
-    const toolUses = response.content.filter(b => b.type === 'tool_use');
-    const toolResults = await Promise.all(
-      toolUses.map(async (tu) => {
-        try {
-          const result = await executeTool(tu.name, tu.input, toolContext);
-          return {
-            type: 'tool_result',
-            tool_use_id: tu.id,
-            content: typeof result === 'string' ? result : JSON.stringify(result),
-          };
-        } catch (err) {
-          console.error(`Tool ${tu.name} error:`, err.message);
-          return {
-            type: 'tool_result',
-            tool_use_id: tu.id,
-            content: `Error al ejecutar ${tu.name}: ${err.message}`,
-            is_error: true,
-          };
-        }
-      })
-    );
+    const toolResults = await ejecutarHerramientas(response);
 
     currentMessages = [
       ...currentMessages,
