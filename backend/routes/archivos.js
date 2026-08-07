@@ -93,7 +93,8 @@ async function conEnlace(req, res, next) {
 
   const { data: contacto } = await supabase
     // metadata se trae para no pisarla al registrar el consentimiento.
-    .from('customers').select('id, display_name, consent_status, metadata').eq('id', enlace.customer_id).single();
+    .from('customers').select('id, display_name, primary_phone, consent_status, metadata')
+    .eq('id', enlace.customer_id).single();
 
   const slots = Array.isArray(enlace.slots) && enlace.slots.length
     ? enlace.slots : config.slotsPorDefecto;
@@ -291,9 +292,19 @@ router.get('/p/:token/bajar/:archivoId', conEnlace, async (req, res) => {
   res.redirect(data.signedUrl);
 });
 
-router.post('/p/:token/finalizar', express.json(), conEnlace, (req, res) => {
+router.post('/p/:token/finalizar', express.json(), conEnlace, async (req, res) => {
   const { enlace, config, carpeta } = req.portal;
+
   if (config.webhookConfirmacion) {
+    // Se adjunta la config de la herramienta `custom` del proyecto, igual que
+    // hace callActionWebhook cuando el aviso lo dispara el agente: quien reciba
+    // esto necesita las mismas rutas y ajustes para poder hacer algo útil (en
+    // FADECOM, dónde está el Excel de alumnos en Dropbox).
+    const { data: fila } = await supabase
+      .from('project_tools').select('config')
+      .eq('project_id', enlace.proyecto_id).eq('tool_name', 'custom').maybeSingle()
+      .then(r => r, () => ({ data: null }));
+
     // Si el aviso falla, el contacto no tiene la culpa: sus ficheros ya están
     // guardados, así que se le confirma igual y el fallo queda en el log.
     fetch(config.webhookConfirmacion, {
@@ -305,6 +316,10 @@ router.post('/p/:token/finalizar', express.json(), conEnlace, (req, res) => {
         customer_id: enlace.customer_id,
         carpeta,
         recibido_en: new Date().toISOString(),
+        // El teléfono permite localizar al alumno aunque su ficha del Excel aún
+        // no tenga el DNI: la prerreserva se crea antes de pedírselo.
+        telefono: req.portal.contacto?.primary_phone || '',
+        tool_config: fila?.config || {},
         ...(enlace.metadata || {}),
       }),
     }).catch(err => console.error('[archivos] webhook:', err.message));
