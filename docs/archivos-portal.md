@@ -85,9 +85,25 @@ defecto):
   ],
   "webhook_confirmacion": "https://.../webhook/archivos-recibidos",
   "dias_validez": 7,
+  "url_privacidad": "https://elnegocio.es/politica-de-privacidad",
   "aviso_privacidad": "..."
 }
 ```
+
+### Consentimiento
+
+Si el proyecto define `url_privacidad`, el portal muestra una casilla que enlaza
+esa política y **no deja subir hasta que se acepta**. La comprobación está en el
+servidor (responde **451**), no solo en el JavaScript: una casilla que solo vive
+en la página no es consentimiento, es decoración.
+
+Se registra en `customers.consent_status / consent_source / consent_at`, y se
+guarda además la URL exacta que se mostró en `customers.metadata.politica_aceptada`
+— si mañana cambia el texto de la política, sigue constando a qué versión dijo
+que sí. A quien ya la haya aceptado (por este portal o por otro canal) no se le
+vuelve a pedir.
+
+Sin `url_privacidad` no se pide nada: no habría documento al que remitir.
 
 `tool_name = 'archivos'` no es una herramienta del agente: `buildTools` ignora
 los nombres que no están en `ACTION_TOOL_DEFS`, así que no le añade nada al
@@ -128,6 +144,16 @@ asociado, la pestaña lo explica en vez de fallar.
 
 Los nombres de fichero se transliteran y se sanean antes de construir la ruta, y
 llevan marca de tiempo delante para que dos homónimos no se pisen.
+
+## Limitación conocida: contactos duplicados
+
+Si la misma persona vuelve otro día desde la web, se crea un contacto nuevo
+aunque dé el mismo teléfono: el teléfono une canales **en el momento** de
+identificar, no después. Para la zona de archivos importa, porque sus documentos
+quedan repartidos entre dos fichas.
+
+La tabla `customer_merge_suggestions` está pensada justo para esto y se rellena
+sola, pero **no hay nada que la lea** ni que proponga la fusión en el panel.
 
 ## Pendiente
 
