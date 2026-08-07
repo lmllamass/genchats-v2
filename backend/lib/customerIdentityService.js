@@ -66,6 +66,20 @@ function primaryFromIdentities(identities, type) {
   return identities.find(i => i.identity_type === type)?.normalized_value || null;
 }
 
+/**
+ * Tipos que NO sirven para decidir que dos conversaciones son de la misma
+ * persona, aunque se guarden como contexto. Cualquier dato compartido por
+ * varias personas va aquí.
+ */
+const TIPOS_NO_IDENTIFICATIVOS = new Set(['ip', 'user_agent']);
+
+function emparejaContactos(identity) {
+  if (TIPOS_NO_IDENTIFICATIVOS.has(identity.identity_type)) return false;
+  // `low` es la etiqueta que ya usan las pistas débiles; si alguien añade otra
+  // en el futuro, no debería fusionar contactos sin pensarlo.
+  return identity.confidence !== 'low';
+}
+
 export async function resolveCustomerIdentity(supabase, {
   proyecto,
   channel,
@@ -80,6 +94,15 @@ export async function resolveCustomerIdentity(supabase, {
 
   let existingIdentities = [];
   for (const identity of cleanIdentities) {
+    // Solo se EMPAREJA por identidades que señalan a una persona. La IP no lo
+    // hace: la comparten una oficina entera, un CGNAT o un móvil, y además aquí
+    // llega siempre como ::1 porque el chatbot público reenvía la petición al
+    // propio backend. Con la IP como criterio, TODOS los visitantes web de un
+    // proyecto colapsaban en un mismo contacto — 46 identidades y seis
+    // teléfonos distintos en la misma ficha (detectado el 2026-08-07).
+    // Se sigue guardando abajo: como señal es útil, como identificador no.
+    if (!emparejaContactos(identity)) continue;
+
     const { data } = await supabase
       .from('customer_identities')
       .select('*, customers(*)')

@@ -40,9 +40,16 @@ router.post('/:proyecto_id/message', async (req, res) => {
 
     // Forward to chatbot respond endpoint
     const port = process.env.PORT || 4000;
+    // Se propaga la IP del visitante: al reenviar a localhost, el destino veía
+    // ::1 para todo el mundo y la guardaba como si fuera la del cliente.
+    const ipVisitante = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.socket?.remoteAddress || '';
     const response = await fetch(`http://localhost:${port}/api/chatbot/respond`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(ipVisitante ? { 'x-forwarded-for': ipVisitante } : {}),
+      },
       body: JSON.stringify({ proyecto_id, message, visitor_id, channel: 'embed' })
     });
     const data = await response.json();
