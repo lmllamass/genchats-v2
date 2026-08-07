@@ -38,6 +38,7 @@ import operadoresRouter from './routes/operadores.js';
 import mensajesWaRouter from './routes/mensajesWa.js';
 import archivosRouter from './routes/archivos.js';
 import archivosContactoRouter from './routes/archivosContacto.js';
+import integracionesRouter from './routes/integraciones.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -109,6 +110,9 @@ app.use('/api/reservas', requireAuth, reservasRouter);
 app.use('/api/whatsapp-templates', requireAuth, whatsappTemplatesRouter);
 app.use('/api/operadores', requireAuth, operadoresRouter);
 app.use('/api/mensajes-wa', requireAuth, mensajesWaRouter);
+
+// Contexto para automatizaciones que corren solas (secreto compartido, no sesión).
+app.use('/api/integraciones', integracionesRouter);
 
 // Portal de archivos del cliente final: define sus propias rutas completas
 // (/api/archivos/... para n8n y el panel, /p/:token para el contacto), por eso
