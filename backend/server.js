@@ -37,6 +37,7 @@ import whatsappTemplatesRouter from './routes/whatsappTemplates.js';
 import operadoresRouter from './routes/operadores.js';
 import mensajesWaRouter from './routes/mensajesWa.js';
 import archivosRouter from './routes/archivos.js';
+import archivosContactoRouter from './routes/archivosContacto.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -99,6 +100,9 @@ app.use('/api/admin', requireAdmin, adminRouter);
 app.use('/api/telegram', telegramWebhookRouter);
 app.use('/api/gena',    genaRouter);
 app.use('/api/conversations', requireAuth, conversationsRouter);
+// Pestaña Archivos de la ficha: comparte el id compuesto de conversaciones,
+// pero los ficheros cuelgan del contacto (ver el propio router).
+app.use('/api/conversations', requireAuth, archivosContactoRouter);
 app.use('/api/leads', requireAuth, leadsRouter);
 app.use('/api/export', requireAuth, exportCsvRouter);
 app.use('/api/reservas', requireAuth, reservasRouter);

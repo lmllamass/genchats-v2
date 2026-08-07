@@ -184,6 +184,32 @@ export const api = {
   /** Ficha 360 del contacto: sus conversaciones separadas por canal. */
   getCustomer360: (customerId) => apiFetchAuth(`/api/conversations/customer/${customerId}`),
 
+  // ── Archivos del contacto ──
+  // Cuelgan del contacto, no de la conversación: el backend resuelve uno a
+  // partir del otro, así el panel no toca la capa de identidad omnicanal.
+  listArchivos: (convId) => apiFetchAuth(`/api/conversations/${convId}/archivos`),
+  /** El fichero va como binario crudo; el nombre viaja en cabecera para no montar multipart. */
+  subirArchivo: (convId, file) =>
+    apiFetchAuth(`/api/conversations/${convId}/archivos`, {
+      method: 'POST',
+      body: file,
+      timeout: 120000,
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'x-nombre-archivo': encodeURIComponent(file.name || 'archivo'),
+      },
+    }),
+  borrarArchivo: (convId, archivoId) =>
+    apiFetchAuth(`/api/conversations/${convId}/archivos/${archivoId}`, { method: 'DELETE' }),
+  descargarArchivo: (convId, archivoId) =>
+    apiFetchAuth(`/api/conversations/${convId}/archivos/${archivoId}/descargar`),
+  crearEnlaceArchivos: (convId, payload) =>
+    apiFetchAuth(`/api/conversations/${convId}/archivos/enlaces`, {
+      method: 'POST', body: JSON.stringify(payload || {}),
+    }),
+  revocarEnlaceArchivos: (convId, enlaceId) =>
+    apiFetchAuth(`/api/conversations/${convId}/archivos/enlaces/${enlaceId}`, { method: 'DELETE' }),
+
   // Mensajes de WhatsApp (antes se leían directo de Supabase con la clave anónima)
   listMensajesWa: (proyecto_id, limit = 30) =>
     apiFetchAuth(`/api/mensajes-wa?proyecto_id=${encodeURIComponent(proyecto_id)}&limit=${limit}`),

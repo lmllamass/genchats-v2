@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/backendApi";
-import { Bot, User, Send, Loader2, Phone, StickyNote } from "lucide-react";
+import { Bot, User, Send, Loader2, Phone, StickyNote, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import MessageList from "@/components/inbox/MessageList";
 import ConversacionNotas from "./ConversacionNotas";
+import ConversacionArchivos from "./ConversacionArchivos";
 import PlantillaPicker from "./PlantillaPicker";
 
 const CANAL_LABEL = { whatsapp: "WhatsApp", web: "Web", telegram: "Telegram" };
@@ -19,6 +20,8 @@ export default function ConversacionMessages({ conversation, onTakeoverChange })
   const [ventanaAbierta, setVentanaAbierta] = useState(true);
   const [checkingVentana, setCheckingVentana] = useState(false);
   const [showNotas, setShowNotas] = useState(false);
+  // Un solo cajón abierto a la vez: en pantallas normales no caben los dos.
+  const [showArchivos, setShowArchivos] = useState(false);
   const intervalRef = useRef(null);
 
   const fetchMessages = useCallback(async (quiet = false) => {
@@ -141,7 +144,15 @@ export default function ConversacionMessages({ conversation, onTakeoverChange })
           </div>
 
           <button
-            onClick={() => setShowNotas(v => !v)}
+            onClick={() => { setShowArchivos(v => !v); setShowNotas(false); }}
+            title="Archivos del contacto"
+            className={`p-1.5 rounded-md transition-colors shrink-0 ${showArchivos ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"}`}
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => { setShowNotas(v => !v); setShowArchivos(false); }}
             title="Notas internas"
             className={`p-1.5 rounded-md transition-colors shrink-0 ${showNotas ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"}`}
           >
@@ -231,6 +242,7 @@ export default function ConversacionMessages({ conversation, onTakeoverChange })
         )}
       </div>
 
+      {showArchivos && <ConversacionArchivos conversation={conversation} onClose={() => setShowArchivos(false)} />}
       {showNotas && <ConversacionNotas conversation={conversation} onClose={() => setShowNotas(false)} />}
     </div>
   );
