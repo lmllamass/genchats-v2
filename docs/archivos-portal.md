@@ -28,6 +28,8 @@ nueva.
 | `supabase-migrations/024_archivos_contacto.sql` | tablas `archivos` y `archivo_enlaces`, cuota por plan, bucket privado |
 | `backend/lib/archivoEnlaces.js` | crear, resolver y revocar magic links |
 | `backend/routes/archivos.js` | API del enlace + portal que ve el contacto |
+| `backend/routes/archivosContacto.js` | lado tenant, bajo `/api/conversations/:id/archivos` |
+| `src/components/editor/ConversacionArchivos.jsx` | pestaña Archivos de la ficha |
 
 ## Los magic links
 
@@ -111,10 +113,24 @@ curl -X POST https://api-v2.genchats.app/api/archivos/enlace \
 Devuelve `url`, `enlace_id` y `expira_en`. La URL solo se puede leer una vez:
 después ya no hay forma de recuperarla, solo de revocarla y emitir otra.
 
+## La pestaña del panel
+
+En la cabecera del chat, junto a las notas internas. Muestra los archivos del
+contacto con su procedencia (`tuyo`, `lo subió el cliente`, `WhatsApp`…),
+permite subir y borrar, y genera el magic link ya copiado al portapapeles para
+pegárselo al cliente por donde sea.
+
+Cuelga de `/api/conversations/:id/archivos` y reutiliza el id compuesto del
+panel, pero **el backend resuelve el contacto detrás del hilo**: así el panel no
+toca la capa de identidad omnicanal y los archivos de un cliente son los mismos
+se abra el chat que se abra. Si la conversación todavía no tiene contacto
+asociado, la pestaña lo explica en vez de fallar.
+
+Los nombres de fichero se transliteran y se sanean antes de construir la ruta, y
+llevan marca de tiempo delante para que dos homónimos no se pisen.
+
 ## Pendiente
 
-- Pestaña **Archivos** en la ficha del contacto (subir, listar, borrar, generar
-  y revocar enlaces).
 - Que el agente genere el enlace en conversación: hoy hay que llamar a la API.
   En `FADECOM_Reservas_v1` la acción `solicitar_documentacion` todavía devuelve
   el enlace fijo de Dropbox guardado en `project_tools.config.enlace_subida_fotos`.
