@@ -970,6 +970,9 @@ export async function executeTool(toolName, toolInput, toolContext) {
           ycloud_phone_number:  proyecto.ycloud_phone_number || '',
           visitor_id:           vid || '',
           canal:                canal || '',
+          // El contacto unificado: lo necesita cualquier acción que cuelgue algo
+          // de la persona y no del hilo — p. ej. pedirle un enlace de archivos.
+          customer_id:          customer?.id || '',
           reply_webhook_url:    backendUrl ? `${backendUrl}/api/chatbot-public/${proyecto.id}/async-reply` : '',
         };
         const result = await callActionWebhook(proyecto.id, toolName, toolInput, toolConfig, projectContext);
