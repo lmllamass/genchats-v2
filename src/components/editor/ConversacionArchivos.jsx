@@ -6,6 +6,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import moment from "moment";
+// Sin esto las fechas relativas salían en inglés ("caduca in 7 days"): el panel
+// carga el locale en ConversacionesPanel, pero este cajón puede montarse antes.
+import "moment/locale/es";
+moment.locale("es");
 
 const ORIGEN_ETIQUETA = {
   tenant: { texto: "tuyo", clase: "bg-primary/15 text-primary border-primary/20" },
