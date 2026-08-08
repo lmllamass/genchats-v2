@@ -185,6 +185,35 @@ const ACTION_TOOL_DEFS = {
 };
 
 // ── Tool definitions ───────────────────────────────────────────────────────
+/**
+ * Esquema del campo `datos` de la herramienta `custom`.
+ *
+ * Si el negocio declara sus sedes, `lugar` pasa a ser un enum. Es el mismo
+ * truco que arregló las acciones: el esquema pesa mucho más que el prompt, y
+ * con la lista cerrada el modelo ya no puede reservar en una sede que el
+ * cliente no dijo — que fue el fallo más caro de todo el flujo de FADECOM.
+ *
+ * El resto de campos siguen libres: cada acción pide los suyos.
+ */
+function datosSchema(configCustom) {
+  const sedes = Array.isArray(configCustom?.sedes) ? configCustom.sedes : [];
+  const nombres = sedes.map(s => s?.nombre).filter(Boolean);
+  if (!nombres.length) return { type: 'object', description: 'Datos que requiere esa acción' };
+
+  return {
+    type: 'object',
+    description: 'Datos que requiere esa acción',
+    properties: {
+      lugar: {
+        type: 'string',
+        enum: nombres,
+        description: 'Sede EXACTA que pidió el cliente. Si no ha dicho ninguna, pregúntale antes: no elijas tú.',
+      },
+    },
+    additionalProperties: true,
+  };
+}
+
 export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools = [], toolConfigs = {}) {
   const tools = [];
 
@@ -257,7 +286,7 @@ export function buildTools(hasEcommerce, ecommercePlatform, enabledActionTools =
           properties: {
             accion: { type: 'string', enum: acciones.map(a => a.nombre),
                       description: 'Acción a ejecutar (una de las listadas)' },
-            datos:  { type: 'object', description: 'Datos que requiere esa acción' },
+            datos:  datosSchema(toolConfigs?.custom),
           },
           required: ['accion'],
         },
