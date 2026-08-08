@@ -26,12 +26,28 @@ Comprueba sin tocar nada: estado git de ambos repos (y si están detrás de orig
 detrás de origin **revierte trabajo de sesiones paralelas**, ya ha pasado); dry-run del rsync
 v2→v1 (nº de ficheros, lista en `/tmp/actualiza-genchats-diff.txt`); salud de
 `api.genchats.app`, `api-v2` y frontal; PM2 y último backup en el VPS; claves de `.env` que el
-código v2 lee y faltan en el `.env` de v1; y que la BD v1 tenga todas las tablas/columnas que el
-esquema de v2 exige (probes `select … limit 0` con las credenciales del propio proceso v1).
+código v2 lee y faltan en el `.env` de v1; que la BD v1 tenga las tablas/columnas que el código
+de v2 usa de verdad (probes `select … limit 1` con las credenciales del propio proceso v1); y
+que ninguna tabla sensible responda a la clave anónima (fuga de datos).
 
-Estado verificado el 2026-07-28: esquema BD **ya alineado** (las 25 tablas y todas las columnas
-existen en `plsxmck…`); faltaban 4 claves de env: `GOOGLE_CALENDAR_SA_KEY`, `N8N_WEBHOOK_TOKEN`,
-`ADMIN_EMAIL`, `ADMIN_NOTIFICATION_EMAIL`; 72 ficheros de diferencia de código; 0 borrados.
+**☠️ El chequeo de esquema daba FALSOS VERDES hasta el 2026-07-30.** Usaba
+`select('*', {head:true})`: con `head:true` supabase-js hace una petición HEAD y **no rellena
+`error` para una tabla inexistente**, así que la auditoría afirmaba "BD v1 tiene todas las
+tablas" mientras faltaban `conversacion_notas`, `proyecto_operadores` y
+`user_profiles.tipo_cuenta`. Se promocionó código que las usaba y falló en producción. Ya
+corregido a `select(...).limit(1)`. Si alguna vez se toca ese probe: **nunca `head:true`**.
+
+El paso 5 solo comprueba tablas **referenciadas por el código**; las declaradas en migraciones
+antiguas que nadie usa (`system_logs`, `customer_events`, `reservas_cierres`) se listan como
+informativas y no bloquean — si faltan en v1 no rompen nada.
+
+El paso 6 (nuevo el 2026-07-30) detecta la clase de fallo que dejó **datos personales y las
+claves de Stripe/YCloud legibles sin login durante meses**: políticas escritas
+`USING (true)` **sin `TO service_role`**, que en PostgreSQL aplican a PUBLIC (incluido `anon`,
+cuya clave va en el bundle JS). Ver [[project_genchats_claves_expuestas_pendiente_rotar]].
+
+Estado verificado el 2026-07-30 (tras promocionar): esquema alineado, sin fugas, 4 claves de
+env ausentes en v1 pero también ausentes en v2 (no-op documentado más abajo).
 
 ## Fase 2 — Informe y confirmación
 

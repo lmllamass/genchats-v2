@@ -69,11 +69,27 @@ ssh -o ConnectTimeout=10 "$VPS" "
 echo
 
 # ── 5. Esquema: tablas y columnas que v2 requiere, contra la BD v1 ──
-echo "── 5. Esquema BD v1 vs requisitos v2 (probes select limit 0, solo lectura) ──"
+echo "── 5. Esquema BD v1 vs requisitos v2 (GET real limit 1, solo lectura) ──"
 # Tablas: CREATE TABLE de schema + migraciones. Columnas: ALTER TABLE ... ADD COLUMN.
-TABLES=$(grep -ihoE "create table (if not exists )?(public\.)?[a-z_]+" \
+TABLES_DECL=$(grep -ihoE "create table (if not exists )?(public\.)?[a-z_]+" \
   "$V2_DIR"/supabase-schema.sql "$V2_DIR"/supabase-migrations/*.sql \
   "$V2_DIR"/supabase/migrations/*.sql 2>/dev/null | awk '{print $NF}' | sed 's/^public\.//' | sort -u)
+
+# Solo se comprueban las tablas que el CÓDIGO usa de verdad. Hay tablas declaradas en
+# migraciones antiguas que nadie referencia (p. ej. system_logs): si faltan en v1 no rompen
+# nada, y marcarlas como bloqueante entrena a ignorar la auditoría. Las que no se usan se
+# listan aparte como informativas.
+TABLES=""; TABLES_SINUSO=""
+for t in $TABLES_DECL; do
+  if grep -rqE "from\('$t'\)|from\(\"$t\"\)|\.rpc\('$t" "$V2_DIR/backend" "$V2_DIR/src" 2>/dev/null \
+     || grep -rq "'$t'" "$V2_DIR/backend/lib" "$V2_DIR/backend/routes" 2>/dev/null; then
+    TABLES="$TABLES$t
+"
+  else
+    TABLES_SINUSO="$TABLES_SINUSO $t"
+  fi
+done
+[ -n "$TABLES_SINUSO" ] && echo "  (declaradas en migraciones pero sin uso en el código, no se comprueban:$TABLES_SINUSO)"
 COLS=$(awk 'BEGIN{IGNORECASE=1} /alter table/{t=$0} /add column/{print t" "$0}' \
   "$V2_DIR"/supabase-migrations/*.sql "$V2_DIR"/supabase/migrations/*.sql 2>/dev/null \
   | grep -ioE "alter table (if exists )?(only )?(public\.)?[a-z_]+.*add column (if not exists )?[a-z_]+" \
@@ -86,14 +102,20 @@ const s = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_RO
 const tablas = process.argv[1].split(',').filter(Boolean);
 const cols = process.argv[2].split(',').filter(Boolean);
 let bad = 0;
+// GET real con limit(1), NO select(...,{head:true}).
+// El 2026-07-30 este chequeo dio un FALSO VERDE: con head:true supabase-js hace una peticion
+// HEAD y no rellena el objeto error para una tabla inexistente, asi que la auditoria dijo que
+// la BD v1 tenia todas las tablas cuando faltaban conversacion_notas, proyecto_operadores y
+// user_profiles.tipo_cuenta. Un falso verde aqui es peor que no comprobar nada: se promociona
+// codigo que usa tablas que no existen.
 for (const t of tablas) {
-  const { error } = await s.from(t).select('*',{head:true}).limit(0);
-  if (error) { console.log('  ❌ FALTA tabla ' + t); bad++; }
+  const { error } = await s.from(t).select('*').limit(1);
+  if (error) { console.log('  ❌ FALTA tabla ' + t + '  (' + error.message.slice(0, 60) + ')'); bad++; }
 }
 for (const tc of cols) {
   const [t,c] = tc.split('.');
-  const { error } = await s.from(t).select(c,{head:true}).limit(0);
-  if (error) { console.log('  ❌ FALTA columna ' + tc + '  (' + error.message + ')'); bad++; }
+  const { error } = await s.from(t).select(c).limit(1);
+  if (error) { console.log('  ❌ FALTA columna ' + tc + '  (' + error.message.slice(0, 60) + ')'); bad++; }
 }
 console.log(bad ? '  → ' + bad + ' gaps de esquema' : '  ✅ BD v1 tiene todas las tablas y columnas que v2 requiere');
 process.exit(bad ? 1 : 0);
@@ -101,6 +123,33 @@ process.exit(bad ? 1 : 0);
 T_CSV=$(echo "$TABLES" | tr '\n' ',' ); C_CSV=$(echo "$COLS" | tr '\n' ',')
 ssh -o ConnectTimeout=10 "$VPS" "cd $V1_BACKEND_VPS && node --input-type=module -e \"$PROBE_JS\" '$T_CSV' '$C_CSV'" || fail=1
 echo
+
+# ── 6. Fuga de datos: ¿alguna tabla sensible se lee SIN LOGIN? ────────
+# El 2026-07-30 se descubrió que leads, mensajes_wa, conversaciones_chat, config_global y
+# config_plataforma eran legibles con la clave anónima (que va en el bundle JS público):
+# sus políticas eran `USING (true)` SIN `TO service_role`, lo que las abre a PUBLIC. Entre
+# lo expuesto había datos personales (RGPD) y las claves de Stripe/YCloud. La auditoría no
+# miraba las políticas en absoluto, así que esto pasó desapercibido durante meses.
+echo "── 6. RLS: tablas sensibles legibles sin login (debe ser ninguna) ──"
+SENSIBLES="leads mensajes_wa conversaciones_chat config_plataforma config_global customers customer_messages conversacion_notas proyecto_operadores reservas"
+ANON=$(ssh -o ConnectTimeout=10 "$VPS" "grep -m1 '^SUPABASE_ANON_KEY=' $V1_BACKEND_VPS/.env | cut -d= -f2-" 2>/dev/null)
+SB_URL=$(ssh -o ConnectTimeout=10 "$VPS" "grep -m1 '^SUPABASE_URL=' $V1_BACKEND_VPS/.env | cut -d= -f2-" 2>/dev/null)
+if [ -z "$ANON" ] || [ -z "$SB_URL" ]; then
+  echo "  ⚠️  no se pudo leer SUPABASE_ANON_KEY/URL — comprobación omitida"; warn=1
+else
+  leaks=0
+  for t in $SENSIBLES; do
+    r=$(curl -s -m 10 "$SB_URL/rest/v1/$t?select=*&limit=1" -H "apikey: $ANON")
+    # '[]' = RLS filtra todo (o tabla vacía); un JSON con "message" = error/bloqueada.
+    # Cualquier otra cosa son FILAS REALES devueltas sin autenticar.
+    if [ "$r" != "[]" ] && ! printf '%s' "$r" | grep -q '"message"'; then
+      echo "  ❌ FUGA: $t devuelve datos sin autenticar"; leaks=$((leaks+1)); fail=1
+    fi
+  done
+  [ $leaks -eq 0 ] && echo "  ✅ ninguna tabla sensible responde sin login"
+fi
+echo
+
 echo "═══ Resultado: $([ $fail -eq 0 ] && echo 'SIN BLOQUEANTES' || echo 'HAY BLOQUEANTES ❌') $([ $warn -eq 1 ] && echo '· con avisos ⚠️') ═══"
 echo "Siguiente paso: revisar informe y confirmar bloque a bloque (ver SKILL.md §Aplicar)."
 exit $fail
