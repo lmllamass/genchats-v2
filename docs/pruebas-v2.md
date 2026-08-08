@@ -7,8 +7,11 @@ de decidir si sube a producción.
 **Proyecto de pruebas:** FADECOM — `ced4f240-94a9-414f-9712-fb093a473a8d`
 
 > **Las dos bases ya tienen el mismo esquema.** Comparadas columna a columna el
-> 8 de agosto: 125 columnas, 21 tablas, dos funciones y el bucket, sin ninguna
-> diferencia. v1 está lista para recibir el código cuando se decida.
+> 8 de agosto: 128 columnas, 21 tablas, dos funciones y el bucket, sin ninguna
+> diferencia. Migraciones 023 a 026 aplicadas en ambas. v1 está lista para
+> recibir el código cuando se decida.
+>
+> **La voz de FADECOM ya se puede probar:** llama al **+34 919 932 159**.
 
 ---
 
@@ -31,6 +34,9 @@ de decidir si sube a producción.
 | **Sede sin calendario** | «no hay plazas» | «te llama un compañero» |
 | **Nombres en el inbox** | `web_mshg95z5_e3zhvt2e` | nombre y teléfono del contacto |
 | **Recordatorio de curso** | no existe | WhatsApp 24 h antes (sin activar) |
+| **Acciones del agente** | solo por script o admin | pantalla en el panel del tenant |
+| **Documentos del portal** | solo en base de datos | editables en el panel |
+| **Webhook de n8n** | uno global para todos | uno por proyecto, con el global de respaldo |
 
 ### Los bugs de fondo que se arreglaron
 
@@ -145,7 +151,37 @@ Al completar la subida, en el Excel de Dropbox:
 - [ ] Se rellena su **DNI** (antes esa columna quedaba siempre vacía)
 - [ ] Aparecen la carpeta y la fecha de recepción
 
-### 2.9 El recordatorio de 24 h — **sin activar**
+### 2.9 La pantalla de acciones
+
+**Chatbot → Acciones del agente.**
+
+- [ ] Salen las diez agrupadas por para qué sirven, con su interruptor
+- [ ] Activar «Acciones a medida» despliega el editor
+- [ ] Un nombre con espacios o mayúsculas se guarda como identificador
+- [ ] Guardar acciones **no borra** las rutas de Dropbox ni las demás claves
+- [ ] Si el servicio de automatizaciones no está configurado, avisa
+
+### 2.10 Los documentos que pides
+
+**Chatbot → Documentos que pides.**
+
+- [ ] Se añaden, se ordenan con las flechas y se borran
+- [ ] «Póliza del seguro» se guarda como `poliza_del_seguro`
+- [ ] Dos títulos que darían el mismo fichero se rechazan
+- [ ] La caducidad del enlace se cambia (1 a 90 días)
+- [ ] Avisa si no hay política de privacidad publicada
+- [ ] Lo que pongas aquí es lo que ve el cliente en el portal
+
+### 2.11 Los webhooks por proyecto (admin)
+
+**Admin → proyecto → Herramientas / Acciones.**
+
+- [ ] El webhook de n8n del proyecto se guarda y se borra
+- [ ] Vacío indica «usando el global»
+- [ ] El webhook del acuse de documentación se guarda aparte
+- [ ] El historial de WhatsApp ya no está en medio: va detrás de un botón
+
+### 2.12 El recordatorio de 24 h — **sin activar**
 
 `FADECOM_Recordatorio_24h` (`Fq4DdYL65tSaCvG7`) está creado pero **inactivo a
 propósito: envía WhatsApps reales**.
@@ -170,22 +206,30 @@ los cuatro sin tocar nada más.
 | Telegram | común | texto plano | `knowledge_base` |
 | **Voz** | **propio** | 2-3 frases, sin emojis ni URLs | **`knowledge_base_voz`** |
 
-### La voz
+### La voz — ya se puede llamar
 
-**Funciona en v2.** Hay agentes de otros proyectos apuntando ya a
-`wss://api-v2.genchats.app/api/retell/llm/<proyecto_id>`.
+**Llama al +34 919 932 159.** Es el número «Demo2» de la cuenta de Konkabeza,
+provisional hasta que FADECOM ponga el suyo.
 
-FADECOM tiene **su propia cuenta de Retell** (por facturación), así que su
-agente no se ve desde la cuenta de plataforma. Para probar basta con apuntar un
-agente cualquiera a:
+Agente `genchats-FADECOM (v2)` (`agent_d0202843b297ac1a46ec8a656a`), clonado del
+que ya funcionaba: voz `11labs-Santiago`, español de España. Apunta a
+`wss://api-v2.genchats.app/api/retell/llm/ced4f240-…`, y el websocket responde.
 
-```
-wss://api-v2.genchats.app/api/retell/llm/ced4f240-94a9-414f-9712-fb093a473a8d
-```
+> Ese número **antes atendía con el agente de pruebas** `genchats-V2-TEST`. Si
+> alguien lo usaba para otra cosa, ahora contesta FADECOM.
 
-No hace falta tocar nada en el panel: `retell_agent_id` solo sirve para empujar
-ajustes de voz desde el admin, no para recibir llamadas. El id del proyecto
-viaja en esa URL.
+Cuando FADECOM dé su propia cuenta, solo hay que crear allí un agente con esa
+misma URL: el id del proyecto viaja en ella, y `retell_agent_id` únicamente sirve
+para empujar ajustes de voz desde el admin.
+
+**Qué comprobar en la llamada:**
+
+- [ ] Informa del curso y del precio sin recitar las nueve sedes
+- [ ] Pregunta la sede en vez de dársela por supuesta
+- [ ] **No pide el DNI en voz alta** ni dicta direcciones web
+- [ ] Al decir que quieres apuntarte, aparta la plaza y anuncia un WhatsApp
+- [ ] Llega el WhatsApp con el enlace del portal
+- [ ] Menciona la privacidad al principio, sin deletrear la URL
 
 La base de conocimiento de voz ya está cargada
 (`fadecom/genchats/knowledge_base_voz.txt`). El traspaso está resuelto: el
@@ -196,18 +240,20 @@ cerrada el mensaje va dentro de una plantilla aprobada, así que no se pierde.
 
 ## 4. Qué puede configurar el tenant
 
-**Desde el panel:** nombre, logo y colores · mensaje de bienvenida · teléfono,
-email y dirección · base de conocimiento · base de conocimiento de voz · **URL
-de la política de privacidad** · **sedes con su aforo, alias y si son
-reservables**.
+**Desde el panel del tenant:** nombre, logo y colores · mensaje de bienvenida ·
+teléfono, email y dirección · las dos bases de conocimiento · URL de la política
+de privacidad · sedes con su aforo, alias y si son reservables · **las acciones
+del agente y cómo se le describen** · **qué documentos pide el portal y cuánto
+dura el enlace**.
 
-**Solo en base de datos** (`project_tools` no tiene interfaz): qué acciones
-existen y cómo se describen al modelo · qué documentos pide el portal · el
-webhook del acuse de recibo · la caducidad de los enlaces · las rutas de los
-ficheros en Dropbox.
+**Desde admin:** el webhook de n8n del proyecto y el del acuse de documentación.
 
-Queda menos que antes, pero para que un cliente monte su flujo sin ayuda sigue
-faltando una pantalla de acciones. **Es el siguiente trozo grande de producto.**
+Y ahí deben seguir: en esos payloads viajan la clave de WhatsApp del proyecto y
+su configuración, así que **a dónde se mandan los datos no es un campo para el
+cliente**.
+
+**Ya no queda nada que solo se pueda tocar en la base de datos.** Un cliente
+nuevo se monta entero desde el panel.
 
 ---
 
@@ -215,7 +261,7 @@ faltando una pantalla de acciones. **Es el siguiente trozo grande de producto.**
 
 ### Esquema: hecho
 
-Las tres migraciones que faltaban (**023, 024 y 025**) están aplicadas, y las dos
+Las migraciones que faltaban (**023, 024, 025 y 026**) están aplicadas, y las dos
 bases quedan idénticas. Ficheros en `docs/migraciones/`.
 
 Ninguna altera el funcionamiento actual de v1: solo añaden columnas nuevas a
@@ -231,7 +277,8 @@ Ninguna altera el funcionamiento actual de v1: solo añaden columnas nuevas a
    Sin ellas el portal arranca pero no emite enlaces, y parece un fallo del código.
 2. **Revisar los contactos de v1**, que llevan tiempo con el bug de la IP: mirar
    cuántas fichas tienen varios teléfonos antes de decidir qué hacer con ellas.
-3. **Dar de alta las sedes** de cada proyecto en Chatbot → Reservas.
+3. **Dar de alta las sedes** de cada proyecto en Chatbot → Reservas, y revisar
+   sus acciones y sus documentos en las pantallas nuevas.
 4. **El Excel de FADECOM sigue siendo el de ejemplo.** Cuando el cliente dé el
    suyo, cambiar `dropbox_ruta_alumnos`. Ojo: escribir en él lo reconstruye y
    pierde pestañas y formato — riesgo real sin resolver.
