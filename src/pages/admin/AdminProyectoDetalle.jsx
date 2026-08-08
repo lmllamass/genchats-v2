@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Proyecto } from "@/api/entidades";
 import { api } from "@/api/backendApi";
-import { ArrowLeft, Loader2, Zap, RotateCcw } from "lucide-react";
+import { ArrowLeft, Loader2, Zap, RotateCcw, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import WhatsAppProjectSection from "@/components/admin/WhatsAppProjectSection";
@@ -33,6 +34,8 @@ export default function AdminProyectoDetalle() {
   });
 
   // Uses backend service role — bypasses RLS, works for any user's project
+  const [verMensajes, setVerMensajes] = useState(false);
+
   const updateMut = useMutation({
     mutationFn: (data) => api.adminUpdateProyecto(id, data),
     onSuccess: () => {
@@ -160,9 +163,25 @@ export default function AdminProyectoDetalle() {
         saving={updateMut.isPending}
       />
 
-      <WhatsAppConversationHistory proyectoId={proyecto.id} />
-
       <ToolsProjectSection proyecto={proyecto} />
+
+      {/* Esta pantalla es de CONFIGURACIÓN: el historial de mensajes no pinta
+          nada en medio. Se conserva porque para soporte vale su peso en oro
+          —«¿a este cliente le llegan los WhatsApps?»— pero detrás de un botón. */}
+      <div className="mt-6">
+        <button
+          onClick={() => setVerMensajes(v => !v)}
+          className="flex items-center gap-2 text-xs text-white/50 hover:text-white transition-colors"
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          {verMensajes ? "Ocultar" : "Ver"} los últimos mensajes de WhatsApp
+        </button>
+        {verMensajes && (
+          <div className="mt-3">
+            <WhatsAppConversationHistory proyectoId={proyecto.id} />
+          </div>
+        )}
+      </div>
 
       <TransferirProyecto proyecto={proyecto} onTransferido={() => updateMut.reset?.()} />
     </div>

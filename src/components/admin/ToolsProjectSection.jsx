@@ -194,6 +194,71 @@ function ToolRow({ projectId, toolName, existing }) {
   );
 }
 
+/**
+ * Webhook de automatizaciones de ESTE proyecto.
+ *
+ * Vacío = usa el global de la plataforma, que es como funcionaba todo hasta
+ * ahora. Rellenarlo permite dar a un cliente su propio n8n: su flujo, su
+ * almacenamiento (Dropbox, Drive, lo que sea) y, sobre todo, que un fallo suyo
+ * no arrastre a los demás.
+ *
+ * Está en admin y no en el panel del tenant a propósito: en cada llamada viaja
+ * la ycloud_api_key del proyecto y su configuración.
+ */
+function WebhookDelProyecto({ proyecto }) {
+  const [url, setUrl] = useState(proyecto?.n8n_webhook_url || "");
+  const [guardando, setGuardando] = useState(false);
+  const sucio = (proyecto?.n8n_webhook_url || "") !== url;
+
+  const guardar = async () => {
+    const limpia = url.trim();
+    if (limpia && !/^https?:\/\//i.test(limpia)) {
+      return toast.error("Tiene que ser una URL completa (https://…)");
+    }
+    setGuardando(true);
+    try {
+      await api.adminUpdateProyecto(proyecto.id, { n8n_webhook_url: limpia || null });
+      toast.success(limpia ? "Webhook propio guardado" : "Vuelve a usar el global");
+    } catch (err) {
+      toast.error(err?.message || "No se pudo guardar");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 p-3 mb-5 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
+          Webhook de n8n de este proyecto
+        </span>
+        {!proyecto?.n8n_webhook_url && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50">
+            usando el global
+          </span>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://n8n-del-cliente/webhook/acciones — vacío para usar el global"
+          className="flex-1 h-8 px-2.5 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-white placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+        />
+        <Button size="sm" className="h-8 text-xs" onClick={guardar} disabled={guardando || !sucio}>
+          {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : "Guardar"}
+        </Button>
+      </div>
+      <p className="text-[10px] text-white/35 leading-snug">
+        Aquí es donde se decide a dónde van los datos del cliente: qué flujo los procesa y dónde se
+        guardan. Cambiando esta URL, un cliente puede usar su propio n8n sin que nadie toque el
+        compartido — y un fallo suyo deja de afectar al resto.
+      </p>
+    </div>
+  );
+}
+
+
 export default function ToolsProjectSection({ proyecto }) {
   const { data: tools = [], isLoading } = useQuery({
     queryKey: ["project-tools", proyecto.id],
@@ -209,10 +274,11 @@ export default function ToolsProjectSection({ proyecto }) {
         <h3 className="font-display font-semibold text-white">Herramientas / Acciones</h3>
       </div>
       <p className="text-xs text-white/40 mb-5">
-        Activa las acciones que el agente puede ejecutar. "Concertar cita" y "Capturar pedido" son nativas
-        (no requieren n8n). "Consultar stock" y "Acción personalizada" pasan por un webhook n8n
-        (<span className="font-mono text-white/60">N8N_ACTIONS_WEBHOOK_URL</span> en el backend).
+        Activa las acciones que el agente puede ejecutar. «Concertar cita» y «Capturar pedido» son
+        nativas y no necesitan n8n. El resto pasan por el webhook de abajo.
       </p>
+
+      <WebhookDelProyecto proyecto={proyecto} />
 
       {isLoading ? (
         <div className="flex justify-center py-6">

@@ -1002,6 +1002,8 @@ export async function executeTool(toolName, toolInput, toolContext) {
           // El contacto unificado: lo necesita cualquier acción que cuelgue algo
           // de la persona y no del hilo — p. ej. pedirle un enlace de archivos.
           customer_id:          customer?.id || '',
+          // Webhook propio del proyecto, si lo tiene (columna solo de admin).
+          webhook_url:          proyecto.n8n_webhook_url || '',
           reply_webhook_url:    backendUrl ? `${backendUrl}/api/chatbot-public/${proyecto.id}/async-reply` : '',
         };
         const result = await callActionWebhook(proyecto.id, toolName, toolInput, toolConfig, projectContext);

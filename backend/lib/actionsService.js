@@ -53,7 +53,10 @@ function buildDatos(action, payload) {
  * @param {object} projectContext - { nombre, ycloud_api_key, ycloud_phone_number, visitor_id, canal, customer_id, reply_webhook_url }
  */
 export async function callActionWebhook(projectId, action, payload, toolConfig = {}, projectContext = {}) {
-  const webhookUrl = process.env.N8N_ACTIONS_WEBHOOK_URL;
+  // La del proyecto manda; la global queda de respaldo. Así un cliente puede
+  // tener su propio n8n —y su propio destino de almacenamiento— sin que haya que
+  // tocar el workflow compartido, donde un fallo los afecta a todos.
+  const webhookUrl = projectContext.webhook_url || process.env.N8N_ACTIONS_WEBHOOK_URL;
   const token      = process.env.N8N_WEBHOOK_TOKEN;
 
   if (!webhookUrl) {
