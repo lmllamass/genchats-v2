@@ -133,7 +133,7 @@ router.post('/webhook/:proyecto_id', async (req, res) => {
     const ecommerce = proyecto.ecommerce_config;
     const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
-    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, 'telegram', customerContext, actionTools);
+    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, 'telegram', customerContext, actionTools, toolConfigs);
     const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools, toolConfigs);
     const toolContext = {
       proyecto,

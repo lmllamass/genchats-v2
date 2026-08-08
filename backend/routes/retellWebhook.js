@@ -3,6 +3,7 @@ import { supabase } from '../server.js';
 import {
   buildTools,
   buildReservasNote,
+  buildSedesNote,
   runAgentLoop,
   loadExistingLead,
   createAnthropicClient,
@@ -27,7 +28,7 @@ const FILLERS = [
   'Ahora mismo lo miro.',
 ];
 
-function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone = null, enabledTools = []) {
+function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone = null, enabledTools = [], toolConfigs = {}) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
@@ -91,7 +92,7 @@ CONTACTO (compártelo sólo si el cliente lo pide):
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
-${ecommerceNote}${leadContext}${whatsappNote}${bookingNote}${privacidadNote}${buildReservasNote(enabledTools)}${buildCustomerMemoryPrompt(customerContext)}`;
+${ecommerceNote}${leadContext}${whatsappNote}${bookingNote}${privacidadNote}${buildSedesNote(toolConfigs?.custom)}${buildReservasNote(enabledTools)}${buildCustomerMemoryPrompt(customerContext)}`;
 }
 
 function transcriptToMessages(transcript) {
@@ -257,7 +258,7 @@ export function attachRetellWebSocket(server) {
         const enabledTools = [...new Set([...actionTools, 'enviar_whatsapp', 'enviar_email', 'desviar_llamada'])];
 
         const tools = buildTools(hasEcommerce, ecommerce?.platform, enabledTools, toolConfigs);
-        const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone, enabledTools);
+        const system = buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext, callerPhone, enabledTools, toolConfigs);
         // Retell nos da la transcripción COMPLETA de esta llamada en cada turno (gratis, en vivo) —
         // nunca hay que descartarla. `unifiedHistory` solo aporta valor para contexto de OTROS
         // canales/llamadas anteriores; sus propias entradas de esta misma llamada ('[phone] ...',

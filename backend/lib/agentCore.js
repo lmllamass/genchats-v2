@@ -1193,7 +1193,34 @@ export function buildPrivacidadNote(config, canal = 'web') {
     + '\n- Si te pregunta por sus datos, qué guardáis o cómo borrarlos, remítele a esa misma dirección.';
 }
 
-export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web', customerContext = null, enabledTools = []) {
+/**
+ * Las sedes, en el prompt, sacadas del MISMO catálogo que alimenta el enum de
+ * la herramienta. Antes la lista hablada vivía en el texto libre de la base de
+ * conocimiento y la lista reservable en otro sitio: dos listas que se separaban
+ * en cuanto alguien tocaba una. Ahora hay una.
+ *
+ * También distingue las que se reservan aquí de las que lleva una persona, que
+ * es lo que evita decirle a un cliente que en su ciudad no hay plazas.
+ */
+export function buildSedesNote(configCustom) {
+  const sedes = Array.isArray(configCustom?.sedes) ? configCustom.sedes : [];
+  if (!sedes.length) return '';
+
+  const linea = (s) => {
+    const dir = s.direccion ? ` — ${s.direccion}` : '';
+    return s.reserva_online === false
+      ? `- ${s.nombre}${dir} · NO reservas tú: toma sus datos y deriva a un compañero`
+      : `- ${s.nombre}${dir} · puedes consultar fechas y reservar`;
+  };
+
+  return '\n\nSEDES — son estas y ninguna más:\n'
+    + sedes.map(linea).join('\n')
+    + '\n- Nunca des una sede por supuesta: si el cliente no ha dicho cuál, pregúntale.'
+    + '\n- No recites la lista entera salvo que la pida; si nombra una localidad que no está, ofrécele las dos más cercanas.'
+    + '\n- La dirección, solo si la piden.';
+}
+
+export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web', customerContext = null, enabledTools = [], toolConfigs = {}) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
 
@@ -1262,7 +1289,7 @@ ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
 
-${formatInstructions}${ecommerceNote}${buildReservasNote(enabledTools)}${buildPrivacidadNote(config, canal)}${leadContext}${omnichannelContext}`;
+${formatInstructions}${ecommerceNote}${buildSedesNote(toolConfigs?.custom)}${buildReservasNote(enabledTools)}${buildPrivacidadNote(config, canal)}${leadContext}${omnichannelContext}`;
 }
 
 // ── WhatsApp text formatter ────────────────────────────────────────────────

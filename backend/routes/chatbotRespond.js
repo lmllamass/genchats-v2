@@ -97,7 +97,7 @@ router.post('/respond', async (req, res) => {
     const history = unifiedHistory.length ? unifiedHistory : legacyHistory;
 
     // Build system prompt and tools
-    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, canal, customerContext, actionTools);
+    const systemPrompt = buildSystemPrompt(proyecto, config, existingLead, canal, customerContext, actionTools, toolConfigs);
     const tools = buildTools(hasEcommerce, ecommerce?.platform, actionTools, toolConfigs);
     const toolContext = { proyecto, vid, canal, config, existingLead, toolConfigs, customer: customerContext?.customer };
 
