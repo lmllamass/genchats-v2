@@ -256,6 +256,14 @@ export const api = {
     descargarCsv(tipo, proyectoId, filtros),
 
   // Motor de reservas (las tablas tienen RLS de service_role: todo pasa por el backend)
+  // ── Acciones del agente (project_tools) ──
+  listarTools: (proyectoId) => apiFetchAuth(`/api/tools?proyecto_id=${proyectoId}`),
+  guardarTool: (proyectoId, tool_name, cambios) =>
+    apiFetchAuth('/api/tools', {
+      method: 'PUT',
+      body: JSON.stringify({ proyecto_id: proyectoId, tool_name, ...cambios }),
+    }),
+
   listarRecursos: (proyectoId) =>
     apiFetchAuth(`/api/reservas/recursos?proyecto_id=${proyectoId}`),
   crearRecurso: (data) =>

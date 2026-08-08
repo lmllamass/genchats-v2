@@ -39,6 +39,7 @@ import mensajesWaRouter from './routes/mensajesWa.js';
 import archivosRouter from './routes/archivos.js';
 import archivosContactoRouter from './routes/archivosContacto.js';
 import integracionesRouter from './routes/integraciones.js';
+import toolsRouter from './routes/tools.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -110,6 +111,7 @@ app.use('/api/reservas', requireAuth, reservasRouter);
 app.use('/api/whatsapp-templates', requireAuth, whatsappTemplatesRouter);
 app.use('/api/operadores', requireAuth, operadoresRouter);
 app.use('/api/mensajes-wa', requireAuth, mensajesWaRouter);
+app.use('/api/tools', requireAuth, toolsRouter);
 
 // Contexto para automatizaciones que corren solas (secreto compartido, no sesión).
 app.use('/api/integraciones', integracionesRouter);
