@@ -92,7 +92,12 @@ defecto):
 
 ### Consentimiento
 
-Si el proyecto define `url_privacidad`, el portal muestra una casilla que enlaza
+La URL sale de `chatbot_config.url_privacidad`, que **el tenant edita en el
+panel** (pestaña Chatbot → Privacidad) y es la misma que usa el agente para el
+aviso del primer mensaje. `project_tools` solo la sobreescribe si alguien
+necesita una distinta para los documentos.
+
+Si el proyecto define esa URL, el portal muestra una casilla que enlaza
 esa política y **no deja subir hasta que se acepta**. La comprobación está en el
 servidor (responde **451**), no solo en el JavaScript: una casilla que solo vive
 en la página no es consentimiento, es decoración.

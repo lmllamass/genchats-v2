@@ -20,6 +20,7 @@ de decidir si sube a producción.
 | **Documentación del cliente** | enlace fijo de Dropbox, igual para todos | portal por contacto, con caducidad |
 | **Acuse de recibo** | ninguno | marca la ficha en el Excel |
 | **Archivos en el panel** | no existe | pestaña en la ficha del contacto |
+| **Aviso de privacidad** | no existe | en el primer mensaje, voz y texto |
 | **Consentimiento RGPD** | no existe | casilla + registro con fecha |
 | **Nombres en el inbox** | `web_mshg95z5_e3zhvt2e` | nombre y teléfono del contacto |
 | **Recordatorio de curso** | no existe | WhatsApp 24 h antes (sin activar) |
@@ -161,14 +162,13 @@ panel** (pestaña Chatbot). Sugerencia:
 Aquí conviene ser claro, porque la respuesta es «a medias».
 
 **Sí, desde el panel** (pestaña Chatbot): nombre del negocio, logo, colores,
-mensaje de bienvenida, teléfono, email, dirección, `knowledge_base` y
-`knowledge_base_voz`.
+mensaje de bienvenida, teléfono, email, dirección, `knowledge_base`,
+`knowledge_base_voz` y **la URL de la política de privacidad**.
 
 **No, solo en base de datos** — la tabla `project_tools` **no tiene interfaz**:
 
 - Qué acciones existen y cómo se describen al modelo
 - Qué documentos pide el portal (`slots`)
-- La URL de la política de privacidad (`url_privacidad`)
 - El webhook del acuse de recibo
 - Los días de caducidad de los enlaces
 - Las rutas de los ficheros en Dropbox
@@ -190,8 +190,9 @@ exista, cada cliente nuevo necesita que alguien le configure esto a mano.
 3. **El Excel de FADECOM sigue siendo el de ejemplo.** Cuando el cliente dé el
    suyo, cambiar `dropbox_ruta_alumnos`. **Ojo:** escribir en él lo reconstruye
    y pierde pestañas y formato — es un riesgo real sin resolver.
-4. **Falta la URL de la política de privacidad** de FADECOM. Sin ella el portal
-   no pide consentimiento.
+4. **Falta la URL de la política de privacidad** de FADECOM. Se rellena en el
+   panel (pestaña Chatbot → Privacidad). Sin ella, ni el agente avisa en el
+   primer mensaje ni el portal pide consentimiento.
 5. **Limpiar las filas de prueba** del Excel antes de enseñarlo.
 
 ---
