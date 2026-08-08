@@ -264,6 +264,13 @@ export const api = {
       body: JSON.stringify({ proyecto_id: proyectoId, tool_name, ...cambios }),
     }),
 
+  /** Configuración del portal donde el cliente final sube sus documentos. */
+  getPortalArchivos: (proyectoId) => apiFetchAuth(`/api/tools/portal?proyecto_id=${proyectoId}`),
+  guardarPortalArchivos: (proyectoId, cambios) =>
+    apiFetchAuth('/api/tools/portal', {
+      method: 'PUT', body: JSON.stringify({ proyecto_id: proyectoId, ...cambios }),
+    }),
+
   listarRecursos: (proyectoId) =>
     apiFetchAuth(`/api/reservas/recursos?proyecto_id=${proyectoId}`),
   crearRecurso: (data) =>

@@ -17,6 +17,7 @@ import ChannelsList from "@/components/editor/ChannelsList";
 import WhatsAppSection from "@/components/editor/WhatsAppSection";
 import ReservasSection from "@/components/editor/ReservasSection";
 import AccionesSection from "@/components/editor/AccionesSection";
+import PortalArchivosSection from "@/components/editor/PortalArchivosSection";
 import OperadoresSection from "@/components/editor/OperadoresSection";
 import RetellSection from "@/components/editor/RetellSection";
 import PaymentSuccessModal from "@/components/editor/PaymentSuccessModal";
@@ -165,6 +166,7 @@ export default function Editor() {
               <RetellSection proyecto={proyecto} />
               <ReservasSection proyecto={proyecto} />
               <AccionesSection proyecto={proyecto} />
+              <PortalArchivosSection proyecto={proyecto} />
               <OperadoresSection proyecto={proyecto} />
               {config && <ChatbotSidebar config={config} onChange={setConfig} />}
             </>

@@ -259,6 +259,81 @@ function WebhookDelProyecto({ proyecto }) {
 }
 
 
+/**
+ * Webhook que avisa cuando el cliente final termina de subir sus documentos.
+ *
+ * Vive en admin por lo mismo que el otro: es una URL a la que se manda quién ha
+ * subido qué. Y va aquí, junto al de acciones, para que se vean de un vistazo
+ * los dos sitios a los que este proyecto envía datos.
+ */
+function WebhookAcuseArchivos({ proyecto }) {
+  const [url, setUrl] = useState("");
+  const [cargado, setCargado] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  useQuery({
+    queryKey: ["admin-tools-archivos", proyecto?.id],
+    queryFn: async () => {
+      const filas = await api.adminGetProjectTools(proyecto.id);
+      const fila = (Array.isArray(filas) ? filas : filas?.tools || [])
+        .find(f => f.tool_name === "archivos");
+      setUrl(fila?.config?.webhook_confirmacion || "");
+      setCargado(true);
+      return fila || null;
+    },
+    enabled: !!proyecto?.id,
+  });
+
+  const guardar = async () => {
+    const limpia = url.trim();
+    if (limpia && !/^https?:\/\//i.test(limpia)) {
+      return toast.error("Tiene que ser una URL completa (https://…)");
+    }
+    setGuardando(true);
+    try {
+      const filas = await api.adminGetProjectTools(proyecto.id);
+      const fila = (Array.isArray(filas) ? filas : filas?.tools || [])
+        .find(f => f.tool_name === "archivos");
+      await api.adminUpsertProjectTool(proyecto.id, {
+        tool_name: "archivos",
+        enabled: true,
+        config: { ...(fila?.config || {}), webhook_confirmacion: limpia },
+      });
+      toast.success(limpia ? "Acuse configurado" : "Acuse desactivado");
+    } catch (err) {
+      toast.error(err?.message || "No se pudo guardar");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 p-3 mb-5 space-y-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
+        Aviso cuando llega documentación
+      </span>
+      <div className="flex gap-2">
+        <input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          disabled={!cargado}
+          placeholder="https://n8n/webhook/documentacion-recibida — vacío para no avisar"
+          className="flex-1 h-8 px-2.5 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-white placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-orange-400/50 disabled:opacity-40"
+        />
+        <Button size="sm" className="h-8 text-xs" onClick={guardar} disabled={guardando || !cargado}>
+          {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : "Guardar"}
+        </Button>
+      </div>
+      <p className="text-[10px] text-white/35 leading-snug">
+        Cuando el cliente final termina de subir sus documentos, se llama a esta URL con quién es y
+        dónde han quedado. Sin ella los archivos se guardan igual, pero nadie se entera de que han
+        llegado.
+      </p>
+    </div>
+  );
+}
+
+
 export default function ToolsProjectSection({ proyecto }) {
   const { data: tools = [], isLoading } = useQuery({
     queryKey: ["project-tools", proyecto.id],
@@ -279,6 +354,7 @@ export default function ToolsProjectSection({ proyecto }) {
       </p>
 
       <WebhookDelProyecto proyecto={proyecto} />
+      <WebhookAcuseArchivos proyecto={proyecto} />
 
       {isLoading ? (
         <div className="flex justify-center py-6">

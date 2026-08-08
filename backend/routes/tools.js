@@ -45,13 +45,14 @@ const CATALOGO = [
 /** Filas que NO son herramientas del agente, sino configuración de otras partes. */
 const NO_SON_HERRAMIENTAS = new Set(['archivos', 'documentos']);
 
-async function proyectoDelUsuario(req, res) {
+async function proyectoDelUsuario(req, res, columnas) {
   const proyectoId = req.query.proyecto_id || req.body?.proyecto_id;
   if (!proyectoId) {
     res.status(400).json({ error: 'proyecto_id es obligatorio' });
     return null;
   }
-  const proyecto = await projectForUser(proyectoId, req.user.id);
+  const proyecto = await projectForUser(proyectoId, req.user.id,
+    columnas ? { columns: columnas } : {});
   if (!proyecto) {
     res.status(403).json({ error: 'Forbidden' });
     return null;
@@ -140,6 +141,98 @@ function saneaCustom(config) {
       }))
       .filter(a => a.nombre && a.descripcion),
   };
+}
+
+// ── El portal de archivos ───────────────────────────────────────────────────
+//
+// No es una herramienta del agente: es la configuración de la pantalla donde el
+// cliente final sube sus documentos. Por eso va aparte y no en el catálogo.
+
+const SLOTS_POR_DEFECTO = [
+  { id: 'dni_anverso', titulo: 'DNI o NIE — parte delantera', ayuda: 'Que se vean las cuatro esquinas, sin reflejos.' },
+  { id: 'dni_reverso', titulo: 'DNI o NIE — parte trasera',   ayuda: 'La cara de atrás del documento.' },
+  { id: 'foto_carnet', titulo: 'Fotografía tipo carnet',      ayuda: 'De frente y sobre fondo claro. Vale un selfie bien iluminado.' },
+];
+
+router.get('/portal', async (req, res) => {
+  // chatbot_config trae la URL de la política, que se enseña aquí sin volver a pedirla.
+  const proyecto = await proyectoDelUsuario(req, res, 'id, nombre, user_id, chatbot_config');
+  if (!proyecto) return;
+
+  const { data } = await supabase
+    .from('project_tools').select('config')
+    .eq('project_id', proyecto.id).eq('tool_name', 'archivos').maybeSingle();
+
+  const cfg = data?.config || {};
+  res.json({
+    slots: Array.isArray(cfg.slots) && cfg.slots.length ? cfg.slots : SLOTS_POR_DEFECTO,
+    usando_por_defecto: !(Array.isArray(cfg.slots) && cfg.slots.length),
+    dias_validez: cfg.dias_validez || 7,
+    aviso_privacidad: cfg.aviso_privacidad || '',
+    // La política sale de la configuración del chatbot, que es donde el tenant
+    // la edita; aquí solo se dice si la tiene, para no pedirla dos veces.
+    url_privacidad: (proyecto.chatbot_config?.url_privacidad || '').trim(),
+  });
+});
+
+router.put('/portal', express.json(), async (req, res) => {
+  const proyecto = await proyectoDelUsuario(req, res);
+  if (!proyecto) return;
+
+  const { slots, dias_validez, aviso_privacidad } = req.body || {};
+
+  const { data: fila } = await supabase
+    .from('project_tools').select('config')
+    .eq('project_id', proyecto.id).eq('tool_name', 'archivos').maybeSingle();
+
+  const config = { ...(fila?.config || {}) };
+
+  if (slots !== undefined) {
+    if (!Array.isArray(slots)) return res.status(400).json({ error: 'slots debe ser una lista' });
+    const limpios = slots.map(saneaSlot).filter(Boolean);
+    if (!limpios.length) return res.status(400).json({ error: 'Pide al menos un documento' });
+    // El id identifica el fichero en el almacenamiento: dos iguales se pisarían.
+    const ids = new Set(limpios.map(s => s.id));
+    if (ids.size !== limpios.length) {
+      return res.status(400).json({ error: 'Hay dos documentos con el mismo nombre' });
+    }
+    config.slots = limpios;
+  }
+  if (dias_validez !== undefined) {
+    const n = parseInt(dias_validez, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 90) {
+      return res.status(400).json({ error: 'La caducidad va de 1 a 90 días' });
+    }
+    config.dias_validez = n;
+  }
+  if (aviso_privacidad !== undefined) config.aviso_privacidad = String(aviso_privacidad).trim();
+
+  const { error } = await supabase
+    .from('project_tools')
+    .upsert({ project_id: proyecto.id, tool_name: 'archivos', enabled: true, config },
+            { onConflict: 'project_id,tool_name' });
+
+  if (error) {
+    console.error('[tools] portal:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  res.json({ ok: true, config });
+});
+
+/**
+ * El `id` acaba siendo el nombre del fichero en el almacenamiento, así que se
+ * deriva del título y se limpia. Si alguien pide "Póliza del seguro", el fichero
+ * será `poliza_del_seguro.jpg` y no algo con acentos o espacios.
+ */
+function saneaSlot(s) {
+  const titulo = String(s?.titulo || '').trim();
+  if (!titulo) return null;
+  const id = String(s?.id || titulo)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  if (!id) return null;
+  return { id, titulo, ayuda: String(s?.ayuda || '').trim() };
 }
 
 export default router;
