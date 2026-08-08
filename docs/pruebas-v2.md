@@ -15,7 +15,8 @@ de decidir si sube a producción.
 | **Historial que ve el agente** | los mensajes MÁS ANTIGUOS del cliente | los últimos 20-30, en orden |
 | **Acciones de n8n** | el modelo recibía `"Workflow was started"` | respuesta real y síncrona (~2 s) |
 | **Declaración de acciones** | solo en el prompt | en el **esquema** de la herramienta (enum) |
-| **Identidad del contacto** | la IP funde contactos | solo emparejan identidades de persona |
+| **Identidad del contacto** | la IP funde contactos distintos | solo emparejan identidades de persona |
+| **El mismo teléfono entre canales** | no unía: web y WhatsApp iban aparte | un solo contacto |
 | **Turno truncado** | «no pude procesar tu consulta» | reintenta y sale adelante |
 | **Documentación del cliente** | enlace fijo de Dropbox, igual para todos | portal por contacto, con caducidad |
 | **Acuse de recibo** | ninguno | marca la ficha en el Excel |
@@ -25,9 +26,9 @@ de decidir si sube a producción.
 | **Nombres en el inbox** | `web_mshg95z5_e3zhvt2e` | nombre y teléfono del contacto |
 | **Recordatorio de curso** | no existe | WhatsApp 24 h antes (sin activar) |
 
-### Los cuatro bugs de fondo que se arreglaron
+### Los bugs de fondo que se arreglaron
 
-Ninguno era del prompt, y **los cuatro existen igual en v1**:
+Ninguno era del prompt, y **todos existen igual en v1**:
 
 1. **`loadCustomerHistory` traía los mensajes más antiguos.** Un cliente con 160
    mensajes daba contexto de días atrás: el agente olvidaba la sede, se repetía
@@ -40,9 +41,15 @@ Ninguno era del prompt, y **los cuatro existen igual en v1**:
    teléfonos de personas distintas.
 4. **El tope de tokens estaba en 600.** Si el modelo se pasaba justo mientras
    escribía una llamada a herramienta, el turno moría con un mensaje de error.
+5. **Un fallo leyendo la memoria del cliente tumbaba la petición entera.** Un
+   dato *opcional* dejaba al chatbot sin responder.
+6. **El teléfono se comparaba como texto.** En el chat web el cliente teclea
+   `609211040`, por WhatsApp la pasarela da `+34609211040`: la misma persona
+   salía como dos contactos y sus archivos quedaban repartidos.
 
-> El 3 es el más serio si se lleva a v1 tal cual: con la zona de archivos activa,
-> un enlace del portal habría enseñado la documentación de unos clientes a otros.
+> Los más serios son el 3 y el 5: uno habría enseñado la documentación de unos
+> clientes a otros con la zona de archivos activa, y el otro deja el chatbot mudo
+> sin motivo aparente.
 
 ---
 
@@ -80,7 +87,15 @@ Abre el enlace **desde el móvil** — es donde tiene sentido.
 **Caducidad y revocación:** pide un enlace, revócalo desde el panel y vuelve a
 abrirlo → debe decir que no es válido, sin explicar por qué.
 
-### 2.3 La pestaña Archivos del panel
+### 2.3 El mismo cliente por dos canales
+
+Escribe por el chat web dando tu teléfono **sin prefijo**, y luego manda un
+WhatsApp al número del negocio desde ese mismo teléfono.
+
+- [ ] En el Inbox aparece **un solo contacto**, no dos
+- [ ] La ficha muestra el teléfono en formato legible
+
+### 2.4 La pestaña Archivos del panel
 
 `v2.genchats.app` → **Inbox** → abre la conversación → icono del **clip** 📎.
 
@@ -91,7 +106,7 @@ abrirlo → debe decir que no es válido, sin explicar por qué.
 - [ ] Descargar un archivo lo baja **como adjunto** (no lo abre en el navegador)
 - [ ] Los enlaces activos muestran caducidad y cuántas veces se abrieron
 
-### 2.4 El acuse de recibo
+### 2.5 El acuse de recibo
 
 Al completar la subida, en el Excel de Dropbox
 (`/FADECOM_Alumnos_Ejemplo_2026-09.xlsx`, dentro de la carpeta de la app):
@@ -100,7 +115,7 @@ Al completar la subida, en el Excel de Dropbox
 - [ ] Se rellena su **DNI** (antes esa columna quedaba siempre vacía)
 - [ ] Aparece `carpeta_documentacion` y la fecha de recepción
 
-### 2.5 El recordatorio de 24 h — **sin activar**
+### 2.6 El recordatorio de 24 h — **sin activar**
 
 `FADECOM_Recordatorio_24h` (`Fq4DdYL65tSaCvG7`) está creado pero **inactivo a
 propósito: envía WhatsApps reales**.
@@ -199,10 +214,13 @@ exista, cada cliente nuevo necesita que alguien le configure esto a mano.
 
 ## 6. Limitaciones conocidas
 
-- **Contactos duplicados:** si la misma persona vuelve otro día por web se crea
-  otra ficha, aunque dé el mismo teléfono. Sus archivos quedan repartidos entre
-  las dos. La tabla `customer_merge_suggestions` se rellena sola, pero nadie la
-  lee.
+- **Contactos duplicados:** el teléfono ya une los canales, pero quien vuelve
+  desde **otro navegador y no deja su teléfono** sigue creando ficha nueva. No
+  hay forma de saber que es la misma persona. La tabla
+  `customer_merge_suggestions` se rellena sola, pero nadie la lee.
+- **El prefijo se asume español:** un número extranjero de nueve dígitos sin
+  prefijo se etiquetaría mal. Si algún día hay clientes fuera, esto se decide
+  por proyecto.
 - **El recordatorio puede duplicar** si se ejecuta a mano dos veces el mismo día.
 - **Escribir en el Excel lo reconstruye** (pestañas y formato).
 - **Una ficha contaminada** en FADECOM, resto del bug de la IP: ocho
