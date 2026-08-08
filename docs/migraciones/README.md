@@ -11,8 +11,12 @@ Editor SQL: <https://supabase.com/dashboard/project/trpqxsdsoydivdgrofaf/sql/new
 pbcopy < docs/migraciones/v2_al_dia_2026-08-08.sql
 ```
 
-Solo la **025** (aforo por sede): la 024 ya está aplicada.
-Hasta pasarla, crear o editar una sede da error; el resto funciona.
+Reúne **023 + 025**. La 024 ya estaba aplicada, y la 025 se pasó el 8 de agosto;
+queda la **023** (`proyectos.retell_api_key`), que nunca llegó a v2. Hoy no
+estorba —Retell funciona igual— pero la sección de Retell del admin falla al
+leer esa columna.
+
+Volver a pasar la 025 no hace nada: es reejecutable.
 
 ## v1 — `v1_al_dia_2026-08-08.sql`
 
@@ -52,5 +56,11 @@ Sin ellas el portal de archivos arranca pero no emite enlaces.
 ## Comprobado
 
 Los dos ficheros se han ejecutado contra un PostgreSQL con una réplica del
-esquema real de v1: dos pasadas seguidas sin errores, 2 tablas nuevas,
-3 columnas nuevas, 4 funciones y el bucket privado.
+esquema real: dos pasadas seguidas sin errores en ambos.
+
+**Estado el 8 de agosto**, comparando las dos bases columna a columna (125
+columnas, las que el código lee más lo que crean las migraciones):
+
+- **v1: al día.** Las tres migraciones dentro, incluidas las funciones y el bucket.
+- **v2: falta `proyectos.retell_api_key`.** Es la única diferencia entre las dos
+  bases, y es lo que arregla el fichero de v2.
