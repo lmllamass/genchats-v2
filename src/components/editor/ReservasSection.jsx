@@ -143,7 +143,10 @@ export default function ReservasSection({ proyecto }) {
   const proyectoId = proyecto?.id;
   const qc = useQueryClient();
   const [nuevoAbierto, setNuevoAbierto] = useState(false);
-  const [nuevo, setNuevo] = useState({ nombre: "", direccion: "", calendar_id: "" });
+  const [nuevo, setNuevo] = useState({
+    nombre: "", direccion: "", calendar_id: "",
+    alias_calendario: "", alias_alumnos: "", reserva_online: true,
+  });
   const [creando, setCreando] = useState(false);
 
   const { data: recursosData, isLoading, refetch } = useQuery({
@@ -167,9 +170,15 @@ export default function ReservasSection({ proyecto }) {
     if (!nuevo.nombre.trim()) return toast.error("Ponle un nombre");
     setCreando(true);
     try {
-      await api.crearRecurso({ proyecto_id: proyectoId, ...nuevo });
+      const { alias_calendario, alias_alumnos, reserva_online, ...campos } = nuevo;
+      await api.crearRecurso({
+        proyecto_id: proyectoId,
+        ...campos,
+        metadata: { alias_calendario, alias_alumnos, reserva_online },
+      });
       toast.success("Recurso creado");
-      setNuevo({ nombre: "", direccion: "", calendar_id: "" });
+      setNuevo({ nombre: "", direccion: "", calendar_id: "",
+        alias_calendario: "", alias_alumnos: "", reserva_online: true });
       setNuevoAbierto(false);
       refetch();
     } catch (err) {
@@ -247,6 +256,16 @@ export default function ReservasSection({ proyecto }) {
                     <MapPin className="w-3 h-3 shrink-0" />{r.direccion}
                   </p>
                 )}
+                {r.metadata?.reserva_online === false && (
+                  <span className="inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500 border border-amber-500/20">
+                    la lleva un compañero
+                  </span>
+                )}
+                {r.metadata?.alias_calendario?.length > 0 && (
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    en su calendario: {r.metadata.alias_calendario.join(", ")}
+                  </p>
+                )}
                 {r.calendar_id && (
                   <p className="text-[11px] text-muted-foreground truncate">📅 {r.calendar_id}</p>
                 )}
@@ -272,6 +291,30 @@ export default function ReservasSection({ proyecto }) {
               Si pones un calendario, cada reserva creará su evento y se moverá o borrará al
               cambiarla o cancelarla. Recuerda compartirlo con la cuenta de servicio.
             </p>
+
+            <div className="pt-2 border-t border-border/60 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Si la disponibilidad vive en un fichero del cliente
+              </p>
+              <Input value={nuevo.alias_calendario}
+                onChange={e => setNuevo(n => ({ ...n, alias_calendario: e.target.value }))}
+                placeholder="Cómo se llama en su calendario (separa con comas)" className="h-8 text-xs" />
+              <Input value={nuevo.alias_alumnos}
+                onChange={e => setNuevo(n => ({ ...n, alias_alumnos: e.target.value }))}
+                placeholder="Cómo se llama en su listado (ej. FUENLA)" className="h-8 text-xs" />
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="checkbox" checked={nuevo.reserva_online}
+                  onChange={e => setNuevo(n => ({ ...n, reserva_online: e.target.checked }))}
+                  className="mt-0.5 accent-primary" />
+                <span className="text-[11px] leading-snug">
+                  El chatbot puede reservar aquí
+                  <span className="block text-[10px] text-muted-foreground">
+                    Si lo desmarcas, dirá que un compañero se encarga de esta sede en vez de
+                    decir que no hay plazas.
+                  </span>
+                </span>
+              </label>
+            </div>
             <div className="flex gap-2">
               <Button size="sm" className="h-7 text-xs" onClick={crearRecurso} disabled={creando}>
                 {creando ? <Loader2 className="w-3 h-3 animate-spin" /> : "Crear"}

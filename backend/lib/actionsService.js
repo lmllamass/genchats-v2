@@ -122,5 +122,37 @@ export async function loadProjectTools(supabase, projectId) {
 
   const enabledNames = data.map(r => r.tool_name);
   const configs = Object.fromEntries(data.map(r => [r.tool_name, r.config || {}]));
+
+  // Las sedes se guardan como RECURSOS, que es la misma cosa —"cada sede, local
+  // o sala"— y ya tienen editor en el panel. Se inyectan en la config de
+  // `custom` porque es lo que viaja al webhook de n8n y lo que alimenta el enum
+  // de la herramienta: quien las consume no tiene que saber de dónde salen.
+  const sedes = await cargarSedes(supabase, projectId);
+  if (sedes.length) configs.custom = { ...(configs.custom || {}), sedes };
+
   return { enabledNames, configs };
+}
+
+/**
+ * Recursos del proyecto, en la forma que espera el resto del sistema.
+ * `metadata` guarda lo que es propio de la integración de cada cliente: con qué
+ * nombre aparece esa sede en sus ficheros.
+ */
+async function cargarSedes(supabase, projectId) {
+  const { data } = await supabase
+    .from('reservas_recursos')
+    .select('nombre, direccion, activo, metadata')
+    .eq('proyecto_id', projectId)
+    .eq('activo', true)
+    .order('nombre')
+    .then(r => r, () => ({ data: null }));
+
+  return (data || []).map(r => ({
+    nombre: r.nombre,
+    direccion: r.direccion || '',
+    alias_calendario: r.metadata?.alias_calendario || [],
+    alias_alumnos: r.metadata?.alias_alumnos || r.nombre,
+    // Por defecto se puede reservar: lo excepcional es la sede que no.
+    reserva_online: r.metadata?.reserva_online !== false,
+  }));
 }
