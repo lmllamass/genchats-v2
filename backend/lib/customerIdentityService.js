@@ -121,6 +121,15 @@ export async function resolveCustomerIdentity(supabase, {
       || primaryFromIdentities(cleanIdentities, 'whatsapp_number')
       || primaryFromIdentities(cleanIdentities, 'retell_phone_number');
 
+    // Contacto nuevo = primer contacto real. Es el momento exacto en que el
+    // agente le da el aviso de privacidad, así que se deja constancia aquí:
+    // ante una reclamación, lo que vale no es que el prompt lo dijera, sino
+    // poder enseñar cuándo se informó y a qué política se le remitió.
+    const politica = (proyecto.chatbot_config?.url_privacidad || '').trim();
+    const metadataConAviso = politica
+      ? { ...metadata, aviso_privacidad: { url: politica, fecha: nowIso(), canal: channel } }
+      : metadata;
+
     const { data, error } = await supabase
       .from('customers')
       .insert({
@@ -134,7 +143,7 @@ export async function resolveCustomerIdentity(supabase, {
         preferred_channel: normalizeSourceChannel(channel),
         first_seen_at: nowIso(),
         last_seen_at: nowIso(),
-        metadata,
+        metadata: metadataConAviso,
       })
       .select()
       .single();
@@ -294,7 +303,13 @@ export async function loadCustomerHistory(supabase, customerId, currentMessage, 
   return messages.length > 20 ? messages.slice(-20) : messages;
 }
 
-export function buildCustomerMemoryPrompt({ customer, memory } = {}) {
+export function buildCustomerMemoryPrompt(contexto) {
+  // Ojo con el default de parámetro: solo actúa con `undefined`, no con `null`.
+  // Y `null` es justo lo que devuelve resolveCustomerIdentity cuando falla, así
+  // que desestructurar en la firma tiraba abajo la petición entera —el chatbot
+  // dejaba de responder— por no poder leer la memoria del cliente, que es
+  // opcional. Se degrada: sin memoria, pero contestando.
+  const { customer, memory } = contexto || {};
   if (!customer) return '';
 
   const lines = ['\n\nMEMORIA OMNICANAL DEL CLIENTE:'];

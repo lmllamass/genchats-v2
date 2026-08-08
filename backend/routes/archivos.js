@@ -65,11 +65,16 @@ async function cargarConfig(proyectoId) {
     slotsPorDefecto: Array.isArray(cfg.slots) && cfg.slots.length ? cfg.slots : SLOTS_POR_DEFECTO,
     webhookConfirmacion: cfg.webhook_confirmacion || '',
     diasValidez: cfg.dias_validez || 7,
-    // Política de privacidad del negocio. Si el proyecto la configura, el
-    // contacto tiene que aceptarla antes de poder subir nada — y se guarda que
-    // lo hizo, con fecha. Si no hay URL no se le pide nada: no habría a qué
-    // remitirle, y un check sin documento detrás no vale para nada.
-    urlPrivacidad: cfg.url_privacidad || '',
+    // Política de privacidad del negocio. Si el proyecto la publica, el contacto
+    // tiene que aceptarla antes de poder subir nada — y se guarda que lo hizo,
+    // con fecha. Si no hay URL no se le pide nada: no habría a qué remitirle, y
+    // un check sin documento detrás no vale para nada.
+    //
+    // La fuente es la configuración del chatbot, que es la que el tenant edita
+    // en el panel y la misma que usa el agente para el aviso del primer
+    // mensaje: una sola URL para todo. `project_tools` solo la sobreescribe si
+    // alguien necesita una distinta para los documentos.
+    urlPrivacidad: (cfg.url_privacidad || chat.url_privacidad || '').trim(),
     avisoPrivacidad: cfg.aviso_privacidad
       || 'Los archivos se usan únicamente para gestionar tu solicitud y se conservan el tiempo '
        + 'imprescindible. Puedes ejercer tus derechos de acceso y supresión escribiendo al negocio.',

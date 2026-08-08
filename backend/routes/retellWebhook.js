@@ -53,6 +53,13 @@ function buildPhoneSystemPrompt(proyecto, config, existingLead, customerContext,
     + '\nIMPORTANTE: el texto que escribas en el parámetro "mensaje" de enviar_whatsapp NO tiene las restricciones del habla — no lo resumas ni omitas enlaces. Cuando el resultado de buscar_productos incluya URLs de producto (líneas con 👉), CÓPIALAS LITERALMENTE dentro de ese mensaje de WhatsApp; el cliente las necesita para ver la ficha. Las reglas de "sin webs, sin URLs, sin corchetes" del apartado FORMATO son solo para lo que dices en voz durante la llamada.'
     + '\nSI EL WHATSAPP FALLA: la herramienta te lo dirá en su respuesta. No te quedes en "ha habido un problema" — discúlpate en una frase y ofrécele enviárselo por email. Pídele su dirección, repítesela en voz alta para confirmarla (los correos dictados se transcriben mal muy a menudo) y usa enviar_email con el MISMO contenido que ibas a mandar por WhatsApp, enlaces incluidos.';
 
+  // Por teléfono no se dicta una URL: es lo que el propio prompt prohíbe y además
+  // nadie apunta una dirección web al vuelo. Se menciona de palabra y, si el
+  // cliente quiere el detalle, se le manda por escrito.
+  const privacidadNote = (config.url_privacidad || '').trim()
+    ? `\n\nPRIVACIDAD — SOLO AL PRINCIPIO DE LA LLAMADA: en tu primera intervención, después de saludar, di en una frase corta que los datos que facilite se tratan para atender su solicitud y que puede consultar las condiciones en la web de ${config.nombre_negocio || 'la empresa'}. NO deletrees ni dictes la dirección. Si te pide el detalle o dónde consultarlo, ofrécele mandárselo por WhatsApp con enviar_whatsapp e incluye el enlace ${config.url_privacidad.trim()} en el mensaje. No vuelvas a mencionarlo durante el resto de la llamada.`
+    : '';
+
   const bookingNote = '\n\nCITAS: Si el cliente quiere reservar o concertar una cita, confírmale en voz la fecha y hora que has entendido antes de usar concertar_cita ("Entonces, mañana martes a las diez de la mañana, ¿correcto?") — igual que con los números de teléfono, para evitar errores de transcripción. Calcula fecha_hora_iso a partir de la FECHA Y HORA ACTUAL de este contexto.';
 
   return `Eres el asistente de voz de "${config.nombre_negocio || proyecto.nombre}".
@@ -84,7 +91,7 @@ CONTACTO (compártelo sólo si el cliente lo pide):
 ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
-${ecommerceNote}${leadContext}${whatsappNote}${bookingNote}${buildReservasNote(enabledTools)}${buildCustomerMemoryPrompt(customerContext)}`;
+${ecommerceNote}${leadContext}${whatsappNote}${bookingNote}${privacidadNote}${buildReservasNote(enabledTools)}${buildCustomerMemoryPrompt(customerContext)}`;
 }
 
 function transcriptToMessages(transcript) {

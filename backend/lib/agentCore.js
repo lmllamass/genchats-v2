@@ -1141,6 +1141,29 @@ export function buildReservasNote(enabledTools = []) {
   return lineas.join('\n');
 }
 
+/**
+ * Aviso de privacidad en el primer contacto.
+ *
+ * Vamos a guardar los datos de una persona que no ha firmado nada: lo mínimo es
+ * decírselo y remitirla a las condiciones del negocio. Solo se inyecta si el
+ * tenant ha publicado su política — sin documento detrás, el aviso no vale nada
+ * y solo estorba la conversación.
+ *
+ * En voz no se dicta la URL (ver la variante del prompt telefónico): se menciona
+ * de palabra y se ofrece enviarla por escrito.
+ */
+export function buildPrivacidadNote(config, canal = 'web') {
+  const url = (config?.url_privacidad || '').trim();
+  if (!url) return '';
+
+  const negocio = config?.nombre_negocio || 'el negocio';
+  return '\n\nPRIVACIDAD — SOLO EN TU PRIMER MENSAJE DE LA CONVERSACIÓN:'
+    + `\n- Cierra ese primer mensaje con una línea breve: que los datos que facilite los tratará ${negocio} para atender su solicitud, y que puede consultar las condiciones en ${url}`
+    + '\n- Una sola frase, al final, sin dramatizar. No es un formulario ni hay que pedirle que conteste "acepto".'
+    + '\n- NO lo repitas en los mensajes siguientes ni cada vez que le pidas un dato. Una vez por conversación y se acabó.'
+    + '\n- Si te pregunta por sus datos, qué guardáis o cómo borrarlos, remítele a esa misma dirección.';
+}
+
 export function buildSystemPrompt(proyecto, config, existingLead, canal = 'web', customerContext = null, enabledTools = []) {
   const ecommerce = proyecto.ecommerce_config;
   const hasEcommerce = !!(ecommerce?.enabled && ecommerce?.platform && ecommerce.platform !== 'otro');
@@ -1210,7 +1233,7 @@ ${config.telefono ? `- Teléfono: ${config.telefono}` : ''}
 ${config.email ? `- Email: ${config.email}` : ''}
 - Web: ${proyecto.url_origen || ''}
 
-${formatInstructions}${ecommerceNote}${buildReservasNote(enabledTools)}${leadContext}${omnichannelContext}`;
+${formatInstructions}${ecommerceNote}${buildReservasNote(enabledTools)}${buildPrivacidadNote(config, canal)}${leadContext}${omnichannelContext}`;
 }
 
 // ── WhatsApp text formatter ────────────────────────────────────────────────

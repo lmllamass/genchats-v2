@@ -40,6 +40,23 @@ export default function ChatbotSidebar({ config, onChange }) {
         </div>
         <Separator />
         <div>
+          <h3 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Privacidad</h3>
+          <div className="space-y-2">
+            <EditorField
+              label="Política de privacidad (URL)"
+              placeholder="https://tunegocio.com/politica-de-privacidad"
+              value={config.url_privacidad}
+              onChange={v => set("url_privacidad", v)}
+            />
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              Si la rellenas, el chatbot avisará al cliente en el primer mensaje de que vais a guardar
+              sus datos y le remitirá a esta página. También es la que se le muestra para aceptar
+              cuando le pidas documentos. Déjalo vacío y no se le dirá nada.
+            </p>
+          </div>
+        </div>
+        <Separator />
+        <div>
           <h3 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Notificaciones</h3>
           <div className="space-y-2">
             <EditorField label="Email de notificación" placeholder="tu@email.com" value={config.notification_email} onChange={v => set("notification_email", v)} />
