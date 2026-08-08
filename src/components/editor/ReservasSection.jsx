@@ -4,7 +4,7 @@ import { api } from "@/api/backendApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, Plus, Trash2, Loader2, MapPin, X, Clock } from "lucide-react";
+import { CalendarDays, Plus, Trash2, Loader2, MapPin, X, Clock , Pencil} from "lucide-react";
 import { toast } from "sonner";
 import ExportButton from "@/components/ExportButton";
 
@@ -20,6 +20,87 @@ const ESTADO_CLS = {
   completada:   "bg-blue-500/10 text-blue-400 border-blue-500/20",
   no_show:      "bg-red-500/10 text-red-400 border-red-500/20",
 };
+
+
+/**
+ * Edición en línea de una sede. Sustituye a la tarjeta mientras se edita, en vez
+ * de abrir un diálogo: son cuatro campos y el contexto de alrededor —los
+ * horarios— importa para decidir.
+ */
+function RecursoEditor({ recurso, onGuardado, onCancelar }) {
+  const m = recurso.metadata || {};
+  const [form, setForm] = useState({
+    nombre: recurso.nombre || "",
+    direccion: recurso.direccion || "",
+    calendar_id: recurso.calendar_id || "",
+    aforo: recurso.aforo ?? "",
+    alias_calendario: (m.alias_calendario || []).join(", "),
+    alias_alumnos: m.alias_alumnos || "",
+    reserva_online: m.reserva_online !== false,
+  });
+  const [guardando, setGuardando] = useState(false);
+
+  const guardar = async () => {
+    if (!form.nombre.trim()) return toast.error("Ponle un nombre");
+    setGuardando(true);
+    try {
+      const { alias_calendario, alias_alumnos, reserva_online, ...campos } = form;
+      await api.actualizarRecurso(recurso.id, {
+        ...campos,
+        aforo: form.aforo === "" ? null : Number(form.aforo),
+        metadata: { alias_calendario, alias_alumnos, reserva_online },
+      });
+      toast.success("Sede actualizada");
+      onGuardado();
+    } catch (err) {
+      toast.error(err?.message || "No se pudo guardar");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const campo = (clave, props) => (
+    <Input value={form[clave]} onChange={e => setForm(f => ({ ...f, [clave]: e.target.value }))}
+      className="h-8 text-xs" {...props} />
+  );
+
+  return (
+    <div className="rounded-xl border border-primary/40 bg-primary/5 p-3 space-y-2">
+      {campo("nombre", { placeholder: "Nombre" })}
+      {campo("direccion", { placeholder: "Dirección (opcional)" })}
+      {campo("aforo", { placeholder: "Aforo — plazas totales (opcional)", type: "number", min: "1" })}
+      {campo("calendar_id", { placeholder: "ID de Google Calendar (opcional)" })}
+
+      <div className="pt-2 border-t border-border/60 space-y-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Si la disponibilidad vive en un fichero del cliente
+        </p>
+        {campo("alias_calendario", { placeholder: "Cómo se llama en su calendario (separa con comas)" })}
+        {campo("alias_alumnos", { placeholder: "Cómo se llama en su listado (ej. FUENLA)" })}
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" checked={form.reserva_online}
+            onChange={e => setForm(f => ({ ...f, reserva_online: e.target.checked }))}
+            className="mt-0.5 accent-primary" />
+          <span className="text-[11px] leading-snug">
+            El chatbot puede reservar aquí
+            <span className="block text-[10px] text-muted-foreground">
+              Si lo desmarcas, dirá que un compañero se encarga de esta sede en vez de decir
+              que no hay plazas.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div className="flex gap-2">
+        <Button size="sm" className="h-7 text-xs" onClick={guardar} disabled={guardando}>
+          {guardando ? <Loader2 className="w-3 h-3 animate-spin" /> : "Guardar"}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onCancelar}>Cancelar</Button>
+      </div>
+    </div>
+  );
+}
+
 
 function FranjasDeRecurso({ recurso, onCambio }) {
   const [abierto, setAbierto] = useState(false);
@@ -143,8 +224,9 @@ export default function ReservasSection({ proyecto }) {
   const proyectoId = proyecto?.id;
   const qc = useQueryClient();
   const [nuevoAbierto, setNuevoAbierto] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
   const [nuevo, setNuevo] = useState({
-    nombre: "", direccion: "", calendar_id: "",
+    nombre: "", direccion: "", calendar_id: "", aforo: "",
     alias_calendario: "", alias_alumnos: "", reserva_online: true,
   });
   const [creando, setCreando] = useState(false);
@@ -177,7 +259,7 @@ export default function ReservasSection({ proyecto }) {
         metadata: { alias_calendario, alias_alumnos, reserva_online },
       });
       toast.success("Recurso creado");
-      setNuevo({ nombre: "", direccion: "", calendar_id: "",
+      setNuevo({ nombre: "", direccion: "", calendar_id: "", aforo: "",
         alias_calendario: "", alias_alumnos: "", reserva_online: true });
       setNuevoAbierto(false);
       refetch();
@@ -247,6 +329,11 @@ export default function ReservasSection({ proyecto }) {
         )}
 
         {recursos.map(r => (
+          editandoId === r.id
+            ? <RecursoEditor key={r.id} recurso={r}
+                onGuardado={() => { setEditandoId(null); refetch(); }}
+                onCancelar={() => setEditandoId(null)} />
+            : (
           <div key={r.id} className="rounded-xl border border-border p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
@@ -261,6 +348,9 @@ export default function ReservasSection({ proyecto }) {
                     la lleva un compañero
                   </span>
                 )}
+                {r.aforo && (
+                  <p className="text-[10px] text-muted-foreground">aforo: {r.aforo} plazas</p>
+                )}
                 {r.metadata?.alias_calendario?.length > 0 && (
                   <p className="text-[10px] text-muted-foreground truncate">
                     en su calendario: {r.metadata.alias_calendario.join(", ")}
@@ -274,10 +364,14 @@ export default function ReservasSection({ proyecto }) {
                 className="text-muted-foreground hover:text-destructive shrink-0" title="Eliminar recurso">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
+              <button onClick={() => setEditandoId(r.id)}
+                className="text-muted-foreground hover:text-foreground shrink-0" title="Editar">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
             </div>
             <FranjasDeRecurso recurso={r} onCambio={recargar} />
           </div>
-        ))}
+        )))}
 
         {nuevoAbierto ? (
           <div className="rounded-xl border border-border p-3 space-y-2">
@@ -285,6 +379,8 @@ export default function ReservasSection({ proyecto }) {
               placeholder="Nombre (ej. Local Centro)" className="h-8 text-xs" />
             <Input value={nuevo.direccion} onChange={e => setNuevo(n => ({ ...n, direccion: e.target.value }))}
               placeholder="Dirección (opcional)" className="h-8 text-xs" />
+            <Input value={nuevo.aforo} onChange={e => setNuevo(n => ({ ...n, aforo: e.target.value }))}
+              placeholder="Aforo — plazas totales (opcional)" type="number" min="1" className="h-8 text-xs" />
             <Input value={nuevo.calendar_id} onChange={e => setNuevo(n => ({ ...n, calendar_id: e.target.value }))}
               placeholder="ID de Google Calendar (opcional)" className="h-8 text-xs" />
             <p className="text-[10px] text-muted-foreground leading-snug">

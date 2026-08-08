@@ -57,6 +57,12 @@ router.get('/recursos', async (req, res) => {
 });
 
 // POST /api/reservas/recursos
+/** Vacío o cero significa "sin límite", no cero plazas. */
+function aforoValido(v) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /** Solo se acepta lo que entendemos; el resto se descarta. */
 function saneaMetadata(m) {
   if (!m || typeof m !== 'object') return {};
@@ -72,7 +78,7 @@ function saneaMetadata(m) {
 
 router.post('/recursos', async (req, res) => {
   try {
-    const { proyecto_id, nombre, direccion, maps_url, calendar_id, metadata } = req.body;
+    const { proyecto_id, nombre, direccion, maps_url, calendar_id, metadata, aforo } = req.body;
     const proyecto = await proyectoDelUsuario(proyecto_id, req.user.id);
     if (!proyecto) return res.status(404).json({ error: 'Proyecto no encontrado' });
     if (!nombre?.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
@@ -85,6 +91,7 @@ router.post('/recursos', async (req, res) => {
       // Lo propio de la integración de cada cliente: con qué nombre aparece esta
       // sede en sus ficheros, y si se puede reservar desde el chatbot.
       metadata: saneaMetadata(metadata),
+      aforo: aforoValido(aforo),
     }).select().single();
     if (error) {
       if (error.code === '23505') return res.status(400).json({ error: 'Ya existe un recurso con ese nombre' });
@@ -122,7 +129,7 @@ router.patch('/recursos/:id', async (req, res) => {
     const recurso = await recursoDelUsuario(req.params.id, req.user.id);
     if (!recurso) return res.status(404).json({ error: 'Recurso no encontrado' });
 
-    const { nombre, direccion, calendar_id, metadata, activo } = req.body;
+    const { nombre, direccion, calendar_id, metadata, activo, aforo } = req.body;
     const cambios = {};
     if (nombre !== undefined) {
       if (!nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
@@ -132,6 +139,7 @@ router.patch('/recursos/:id', async (req, res) => {
     if (calendar_id !== undefined) cambios.calendar_id = calendar_id?.trim() || null;
     if (activo !== undefined)      cambios.activo = !!activo;
     if (metadata !== undefined)    cambios.metadata = saneaMetadata(metadata);
+    if (aforo !== undefined)       cambios.aforo = aforoValido(aforo);
 
     const { data, error } = await supabase.from('reservas_recursos')
       .update(cambios).eq('id', req.params.id).select().single();

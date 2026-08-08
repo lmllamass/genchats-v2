@@ -141,7 +141,9 @@ export async function loadProjectTools(supabase, projectId) {
 async function cargarSedes(supabase, projectId) {
   const { data } = await supabase
     .from('reservas_recursos')
-    .select('nombre, direccion, activo, metadata')
+    // select('*') a propósito: así una columna añadida después (aforo) llega
+    // sola, y el backend no se cae si aún no se ha pasado la migración.
+    .select('*')
     .eq('proyecto_id', projectId)
     .eq('activo', true)
     .order('nombre')
@@ -154,5 +156,6 @@ async function cargarSedes(supabase, projectId) {
     alias_alumnos: r.metadata?.alias_alumnos || r.nombre,
     // Por defecto se puede reservar: lo excepcional es la sede que no.
     reserva_online: r.metadata?.reserva_online !== false,
+    aforo: r.aforo ?? null,
   }));
 }
