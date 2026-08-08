@@ -14,6 +14,28 @@ echo "v1 (producción): $V1_DIR"
 echo "v2 (fuente):     $V2_DIR"
 echo
 
+# ── 0. ¿Esta copia de la skill está al día? ──────────────────────────────
+# Hay DOS copias (repo v1 y genchats-v2) y el 2026-08-08 la de v2 tenía fecha más
+# reciente pero contenido más viejo: le faltaban los arreglos del 30-jul, incluido
+# el probe con limit(1) que sustituyó al head:true de los FALSOS VERDES. Ejecutar
+# la vieja habría dicho "todo bien" sin comprobar nada.
+echo "── 0. Versión de la skill ──"
+OTRA="$V1_DIR/.claude/skills/actualiza-genchats"
+if [ -f "$OTRA/audit.sh" ]; then
+  if diff -q "$OTRA/audit.sh" "$0" >/dev/null 2>&1; then
+    echo "  ✅ las dos copias (v1 y v2) son idénticas"
+  else
+    echo "  ⚠️  las copias de la skill DIFIEREN — una de las dos está obsoleta"
+    echo "     v1: $(md5 -q "$OTRA/audit.sh" 2>/dev/null || md5sum "$OTRA/audit.sh" | cut -d' ' -f1)  $(date -r "$OTRA/audit.sh" '+%F' 2>/dev/null)"
+    echo "     v2: $(md5 -q "$0" 2>/dev/null || md5sum "$0" | cut -d' ' -f1)  $(date -r "$0" '+%F' 2>/dev/null)"
+    echo "     La fecha NO decide cuál es buena: comparar contenido antes de fiarse."
+    warn=1
+  fi
+else
+  echo "  (no hay copia en el repo v1 con la que comparar)"
+fi
+echo
+
 # ── 1. Estado git local ──────────────────────────────────────────────
 echo "── 1. Git ──"
 for repo in "$V1_DIR" "$V2_DIR"; do
@@ -29,16 +51,38 @@ echo
 # ── 2. Diff de código v2 → v1 (dry-run, nada se copia) ──────────────
 echo "── 2. Ficheros que cambiarían al copiar v2 → repo v1 (rsync dry-run) ──"
 # OJO: sin -c (checksum): en iCloud leería todo el árbol y dispara descargas de evictados.
-rsync -rln --size-only --delete --out-format='%o %n' \
+# -v y NO --out-format: con --out-format los borrados NO salen (el prefijo 'del.'
+# es de rsync 3.x; el de macOS no lo emite). Se contaban 0 borrados SIEMPRE — y el
+# 2026-08-08 los borrados reales eran 27, todo el trabajo de SEO de v1.
+rsync -rlnv --size-only --delete \
   --exclude .git --exclude .claude --exclude genchats-v2 --exclude 'node_modules*' \
   --exclude dist --exclude backups --exclude '.env*' --exclude CLAUDE.md --exclude '*.log' \
   --exclude GENCHATS_OPERATIVA_V1_V2.md --exclude .DS_Store --exclude scripts/deploy.sh \
   "$V2_DIR/" "$V1_DIR/" 2>/dev/null > /tmp/actualiza-genchats-diff.txt
-# rsync local-a-local etiqueta las copias como 'recv' (no 'send')
-n_send=$(grep -cE '^(send|recv)' /tmp/actualiza-genchats-diff.txt || true)
-n_del=$(grep -c '^del\.' /tmp/actualiza-genchats-diff.txt || true)
-echo "  cambiarían: $n_send ficheros · se borrarían en v1: $n_del (lista: /tmp/actualiza-genchats-diff.txt)"
-grep '^del\.' /tmp/actualiza-genchats-diff.txt | head -15 | sed 's/^/    /'
+grep '^deleting ' /tmp/actualiza-genchats-diff.txt | sed 's/^deleting //' > /tmp/actualiza-genchats-del.txt
+grep -vE '^(deleting |sending |sent |total |building |Transfer |$)' /tmp/actualiza-genchats-diff.txt \
+  | grep -v '/$' > /tmp/actualiza-genchats-copiar.txt
+n_send=$(grep -c . /tmp/actualiza-genchats-copiar.txt || true)
+n_del=$(grep -c . /tmp/actualiza-genchats-del.txt || true)
+echo "  cambiarían: $n_send ficheros · se borrarían en v1: $n_del"
+if [ "$n_del" -gt 0 ]; then
+  echo "  ❌ BLOQUEANTE: v1 tiene ficheros que v2 no tiene. El rsync con --delete los borraría."
+  echo "     No es 'v1 va por detrás': los repos han DIVERGIDO y hay que fusionar, no espejar."
+  sed 's/^/       /' /tmp/actualiza-genchats-del.txt | head -20
+  fail=1
+fi
+
+# Ficheros que han cambiado en LOS DOS lados: copiarlos a ciegas pisa trabajo de v1.
+git -C "$V1_DIR" log --name-only --pretty=format:'' -12 2>/dev/null \
+  | sort -u | grep -v '^$' > /tmp/actualiza-genchats-v1tocados.txt
+comm -12 <(sort -u /tmp/actualiza-genchats-copiar.txt) /tmp/actualiza-genchats-v1tocados.txt \
+  > /tmp/actualiza-genchats-conflictos.txt
+n_conf=$(grep -c . /tmp/actualiza-genchats-conflictos.txt || true)
+if [ "$n_conf" -gt 0 ]; then
+  echo "  ⚠️  $n_conf ficheros tocados por v1 en sus últimos 12 commits Y sobrescritos por v2:"
+  sed 's/^/       /' /tmp/actualiza-genchats-conflictos.txt | head -20
+  echo "     Revisar uno a uno antes de copiar (lista: /tmp/actualiza-genchats-conflictos.txt)"
+fi
 echo
 
 # ── 3. Salud de producción ───────────────────────────────────────────
@@ -63,7 +107,17 @@ ssh -o ConnectTimeout=10 "$VPS" "
   PRESENT=\$(grep -oE '^[A-Z0-9_]+' .env | sort -u)
   MISSING=''
   for k in $(echo $REQ_KEYS); do echo \"\$PRESENT\" | grep -qx \"\$k\" || MISSING=\"\$MISSING \$k\"; done
-  if [ -n \"\$MISSING\" ]; then echo \"  ⚠️  Claves que v2 usa y FALTAN en .env de v1:\$MISSING\"; else echo '  ✅ .env de v1 tiene todas las claves que el código v2 lee'; fi
+  if [ -n \"\$MISSING\" ]; then
+    # Una clave ausente en v1 solo importa si v2 SÍ la tiene: si falta en las dos,
+    # es paridad y no hay nada que hacer. Sin esta comparación el aviso miente y
+    # entrena a ignorarlo (2026-07-28: 4 de 4 'faltantes' eran paridad).
+    REALES=''; PARIDAD=''
+    for k in \$MISSING; do
+      if docker exec genchats-v2-api sh -c \"printenv \$k\" >/dev/null 2>&1; then REALES=\"\$REALES \$k\"; else PARIDAD=\"\$PARIDAD \$k\"; fi
+    done
+    [ -n \"\$PARIDAD\" ] && echo \"  ℹ️  Ausentes en v1 pero TAMBIÉN en v2 (paridad, no-op):\$PARIDAD\"
+    if [ -n \"\$REALES\" ]; then echo \"  ⚠️  Claves que v2 SÍ tiene y v1 NO — hay que añadirlas:\$REALES\"; else echo '  ✅ sin diferencias reales de env'; fi
+  else echo '  ✅ .env de v1 tiene todas las claves que el código v2 lee'; fi
   echo \"  SUPABASE_URL de v1: \$(grep '^SUPABASE_URL' .env | cut -d= -f2)\"
 " || { echo "  ❌ SSH al VPS falló"; fail=1; }
 echo
@@ -149,6 +203,44 @@ else
   [ $leaks -eq 0 ] && echo "  ✅ ninguna tabla sensible responde sin login"
 fi
 echo
+
+
+# ── 7. Copia de seguridad y estado del servidor ──────────────────────
+# Lo que un despliegue NO puede reconstruir son los contextos que ha escrito cada
+# cliente (chatbot_config.knowledge_base). El backend nunca los sobrescribe, pero
+# `generarChatbot` SÍ: rehace chatbot_config entero rascando la web, y se dispara
+# al guardar en la pestaña Tienda si cambió el interruptor de ecommerce. Antes de
+# promocionar debe existir una copia reciente.
+echo "── 7. Copia de seguridad y limpieza del servidor ──"
+ssh -o ConnectTimeout=10 "$VPS" '
+  ULTIMA=$(ls -1d /var/backups/genchats-v1-pre-actualizacion-* 2>/dev/null | tail -1)
+  if [ -n "$ULTIMA" ]; then
+    DIAS=$(( ( $(date +%s) - $(stat -c %Y "$ULTIMA") ) / 86400 ))
+    echo "  copia de datos v1: $(basename $ULTIMA) (hace $DIAS día(s))"
+    [ -f "$ULTIMA/CONTEXTOS.json" ] && echo "  ✅ incluye CONTEXTOS.json (lo que escribió el cliente)"       || echo "  ⚠️  esa copia NO tiene CONTEXTOS.json"
+  else
+    echo "  ⚠️  NO hay copia previa de los datos de v1 — hacerla antes de promocionar"
+  fi
+  # Servicios que no deberían estar corriendo: el app genchats-api de easypanel no
+  # tiene imagen propia (el backend vive en PM2) y el 2026-07-23 acabó ejecutando la
+  # imagen del FRONTEND. Un contenedor llamado "api" que sirve HTML confunde a quien
+  # vaya a desplegar.
+  R=$(docker service ls --format "{{.Name}} {{.Replicas}}" 2>/dev/null | grep "^demo_genchats-api " | awk "{print \$2}")
+  [ "$R" = "0/0" ] && echo "  ✅ demo_genchats-api detenido (correcto: la API la sirve PM2)"     || echo "  ⚠️  demo_genchats-api con réplicas $R — revisar qué imagen ejecuta"
+  # Y que api.genchats.app siga apuntando al host, no a un contenedor.
+  DEST=$(python3 -c "
+import json
+d=json.load(open(\"/etc/easypanel/traefik/config/main.yaml\"))
+h=d.get(\"http\",{})
+r=[v for k,v in h.get(\"routers\",{}).items() if \"api.genchats.app\" in v.get(\"rule\",\"\")]
+s=h.get(\"services\",{}).get(r[0][\"service\"],{}) if r else {}
+print([x.get(\"url\") for x in s.get(\"loadBalancer\",{}).get(\"servers\",[])])
+" 2>/dev/null)
+  echo "  api.genchats.app → $DEST"
+  case "$DEST" in *4000*) echo "  ✅ apunta al PM2 del host" ;; *) echo "  ⚠️  NO apunta al host:4000 — verificar antes de desplegar" ;; esac
+' || { echo "  ❌ SSH al VPS falló"; fail=1; }
+echo
+
 
 echo "═══ Resultado: $([ $fail -eq 0 ] && echo 'SIN BLOQUEANTES' || echo 'HAY BLOQUEANTES ❌') $([ $warn -eq 1 ] && echo '· con avisos ⚠️') ═══"
 echo "Siguiente paso: revisar informe y confirmar bloque a bloque (ver SKILL.md §Aplicar)."

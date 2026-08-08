@@ -22,7 +22,8 @@ además bloquea SSH/escrituras a producción sin esa confirmación literal).
 bash .claude/skills/actualiza-genchats/audit.sh
 ```
 
-Comprueba sin tocar nada: estado git de ambos repos (y si están detrás de origin — desplegar
+Comprueba sin tocar nada: **que esta copia de la skill no sea la vieja** (paso 0);
+estado git de ambos repos (y si están detrás de origin — desplegar
 detrás de origin **revierte trabajo de sesiones paralelas**, ya ha pasado); dry-run del rsync
 v2→v1 (nº de ficheros, lista en `/tmp/actualiza-genchats-diff.txt`); salud de
 `api.genchats.app`, `api-v2` y frontal; PM2 y último backup en el VPS; claves de `.env` que el
@@ -40,6 +41,10 @@ corregido a `select(...).limit(1)`. Si alguna vez se toca ese probe: **nunca `he
 El paso 5 solo comprueba tablas **referenciadas por el código**; las declaradas en migraciones
 antiguas que nadie usa (`system_logs`, `customer_events`, `reservas_cierres`) se listan como
 informativas y no bloquean — si faltan en v1 no rompen nada.
+
+El paso 7 (nuevo el 2026-08-08) mira lo que el resto de pasos daban por hecho: que exista
+una **copia de los datos de v1 con `CONTEXTOS.json`**, que `demo_genchats-api` siga parado y
+que `api.genchats.app` siga apuntando al PM2 del host y no a un contenedor.
 
 El paso 6 (nuevo el 2026-07-30) detecta la clase de fallo que dejó **datos personales y las
 claves de Stripe/YCloud legibles sin login durante meses**: políticas escritas
@@ -69,7 +74,16 @@ reales están en el env del contenedor v2: `ssh root@72.62.24.150 "docker exec g
 **Prohibido tocar `SUPABASE_URL` / `SUPABASE_*` de v1** — es la línea que separa "actualizar" de
 "romper producción". El restart lo hará el deploy del bloque C (`--update-env`).
 
-**Bloque C — Copiar código y desplegar.** Desde la raíz de `genchats-v2`:
+**Bloque C — Copiar código y desplegar.**
+
+> ☠️ **Antes de nada, mirar el paso 2 de la auditoría.** El rsync de abajo es un ESPEJO
+> (`--delete`) y solo vale si v1 ⊆ v2. El 2026-08-08 dejó de ser cierto: v1 tenía 27 ficheros
+> propios (las 7 landings de SEO, `robots.txt`, `sitemap.xml`, `llms.txt`, `og-image.png`,
+> `logo.png`, `NoIndex.jsx`, `ChannelLandingLayout.jsx`) y 26 ficheros tocados por los dos
+> lados. Espejar habría borrado toda la fase de SEO y las cabeceras de seguridad de nginx.
+> **Si el paso 2 marca borrados o conflictos, no se espeja: se fusiona fichero a fichero.**
+
+Desde la raíz de `genchats-v2`:
 
 ```bash
 # 1. Copia real (mismo rsync de la auditoría, sin -n). Exclusiones OBLIGATORIAS:
@@ -119,6 +133,38 @@ v1 `git checkout <commit-anterior> && ./scripts/deploy.sh frontend`.
 
 ## Gotchas
 
+- **☠️ v1 y v2 son repos SEPARADOS que divergen.** Dos `.git` distintos (`genchats/.git` y
+  `genchats-v2/.git`), sin remoto común: nada impide que v1 reciba trabajo que v2 nunca ve. Ha
+  pasado con toda la fase de SEO (landings por canal, robots/sitemap/llms, CSP y HSTS en
+  `nginx.conf`, metadatos en `index.html`, `react-helmet-async` en `package.json`) y con los
+  endpoints `GET/PUT /api/admin/config-global` de `backend/routes/admin.js`. El historial lo
+  delata: los commits `promote:` dicen "fusionado", no "copiado". **Promocionar es fusionar.**
+- **☠️ El contador de borrados del paso 2 mentía.** Usaba `--out-format='%o %n'` y buscaba el
+  prefijo `del.`, que solo emite rsync 3.x; el de macOS no lo emite nunca, así que el informe
+  decía "0 borrados" con 27 borrados reales pendientes. Ahora usa `-v` y parsea `deleting `.
+  Moraleja para cualquier contador de esta skill: **un cero hay que verlo salir de un caso que
+  de verdad tenga elementos**, no darlo por bueno porque no falló.
+- **☠️ Hay DOS copias de esta skill y pueden divergir** (2026-08-08): la de `genchats-v2/`
+  tenía fecha más reciente y contenido más viejo — le faltaban los arreglos del 30-jul, entre
+  ellos el probe con `limit(1)` que sustituyó al `head:true` de los falsos verdes. Ejecutarla
+  habría dado "todo bien" sin comprobar nada. **La fecha no decide cuál es buena.** El paso 0
+  lo detecta; ante divergencia, comparar contenido y sincronizar antes de auditar. El script
+  calcula sus rutas desde su ubicación, así que **solo funciona la copia de `genchats-v2/`**:
+  hay que sincronizarla, no ejecutar la otra.
+- **☠️ Lo que un despliegue no puede reconstruir son los contextos del cliente.** El backend
+  nunca escribe en `chatbot_config` (solo lee) y el editor guarda el objeto completo, así que
+  las claves que el panel no muestra sobreviven. Pero **`generarChatbot` sí lo rehace entero**
+  rascando la web, y se dispara al guardar en la pestaña **Tienda** si cambió el interruptor
+  de ecommerce o la plataforma. En FADECOM son 19.226 caracteres escritos por el cliente. El
+  paso 7 exige copia previa; el fichero `CONTEXTOS.json` de esa copia es el que permite
+  restaurar solo eso sin tocar nada más.
+- **El app `genchats-api` de Easypanel no tiene imagen propia** (el backend vive en PM2 del
+  host) y el 2026-07-23 a las 16:54:30 acabó ejecutando la imagen del **frontend**, junto con
+  `demo_genchats-frontend`, en el mismo milisegundo. Un contenedor llamado "api" sirviendo HTML
+  confunde a quien vaya a desplegar. Está escalado a 0. **No borrar el app**: es quien crea el
+  router de `api.genchats.app` (que apunta a `172.17.0.1:4000`, o sea al host). El arreglo
+  definitivo es sacar esa ruta a un fichero propio de Traefik —como `genchats-v2.yaml`— y
+  entonces sí borrarlo; hacerlo justo antes de promocionar mezcla dos cambios y no conviene.
 - **☠️ `--exclude scripts/deploy.sh` en el rsync es OBLIGATORIO** (aprendido el 2026-07-28 en
   la primera promoción): sin él, el `deploy.sh` de v2 (resto solo-frontend que ignora el
   argumento `backend`) PISA el deployer canónico de v1 — el "deploy backend" desplegó el
