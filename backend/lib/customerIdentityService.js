@@ -2,6 +2,7 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+/** Forma legible, la que se enseña en el panel. */
 export function normalizePhone(value) {
   if (!value) return null;
   const raw = String(value).trim();
@@ -9,6 +10,26 @@ export function normalizePhone(value) {
   const digits = raw.replace(/[^\d]/g, '');
   if (!digits) return null;
   return raw.startsWith('+') ? `+${digits}` : digits;
+}
+
+/**
+ * Forma canónica para EMPAREJAR, que no es la misma que para mostrar.
+ *
+ * El teléfono es la única llave que une de verdad los canales: en el chat web lo
+ * teclea el cliente ("609211040"), por WhatsApp llega de la pasarela
+ * ("+34609211040") y por voz lo dicta. Comparando el texto tal cual, la misma
+ * persona salía como tres contactos distintos.
+ *
+ * Se reduce a dígitos y, si quedan nueve, se asume España. Es una heurística:
+ * un número extranjero de nueve dígitos sin prefijo se etiquetaría mal, pero
+ * pedirle el prefijo a un cliente español para que el CRM cuadre es peor
+ * negocio. Si algún día hay clientes fuera, esto se decide por proyecto.
+ */
+export function telefonoCanonico(value) {
+  if (!value) return null;
+  const digitos = String(value).replace(/[^\d]/g, '');
+  if (digitos.length < 6) return null;
+  return digitos.length === 9 ? `34${digitos}` : digitos;
 }
 
 export function normalizeEmail(value) {
@@ -28,8 +49,12 @@ function normalizeSourceChannel(channel) {
   return channel === 'embed' ? 'web' : channel;
 }
 
+const TIPOS_TELEFONO = ['phone', 'whatsapp_number', 'retell_phone_number'];
+
 function normalizeIdentity(type, value) {
-  if (['phone', 'whatsapp_number', 'retell_phone_number'].includes(type)) return normalizePhone(value);
+  // Los teléfonos se guardan canónicos porque `normalized_value` es la columna
+  // por la que se busca; lo legible va en primary_phone.
+  if (TIPOS_TELEFONO.includes(type)) return telefonoCanonico(value);
   if (type === 'email') return normalizeEmail(value);
   return normalizeGeneric(value);
 }
@@ -63,7 +88,13 @@ function compactIdentities(identities = []) {
 }
 
 function primaryFromIdentities(identities, type) {
-  return identities.find(i => i.identity_type === type)?.normalized_value || null;
+  const encontrada = identities.find(i => i.identity_type === type);
+  if (!encontrada) return null;
+  // Para teléfonos se devuelve el valor tal y como lo dio el cliente (limpio),
+  // no la forma canónica: en la ficha se lee "+34609211040", no "34609211040".
+  return TIPOS_TELEFONO.includes(type)
+    ? normalizePhone(encontrada.identity_value)
+    : encontrada.normalized_value;
 }
 
 /**
